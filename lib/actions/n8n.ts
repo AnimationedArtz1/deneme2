@@ -4,7 +4,7 @@ import { revalidatePath } from 'next/cache'
 
 // HARDCODED Webhook URLs - Do not use environment variables
 const N8N_TRANSACTION_WEBHOOK = 'https://n8n.globaltripmarket.com/webhook/islem-ekle'
-const N8N_QUERY_WEBHOOK = 'https://n8n.globaltripmarket.com/webhook/sorgu'
+const N8N_CHATBOT_WEBHOOK = 'https://n8n.globaltripmarket.com/webhook/chatbot'
 
 export interface N8NResponse {
     success: boolean
@@ -53,12 +53,12 @@ export async function addTransaction(text: string): Promise<N8NResponse> {
 }
 
 /**
- * AI Query for the Analyst Chat interface
- * Sends user message to n8n for AI-powered analysis
+ * AI Query for the Analyst Chat interface (General Assistant)
+ * Sends user message to n8n chatbot for AI-powered analysis
  */
 export async function aiQuery(userMessage: string): Promise<N8NResponse> {
     try {
-        const response = await fetch(N8N_QUERY_WEBHOOK, {
+        const response = await fetch(N8N_CHATBOT_WEBHOOK, {
             method: 'POST',
             headers: {
                 'Content-Type': 'application/json',
@@ -73,6 +73,16 @@ export async function aiQuery(userMessage: string): Promise<N8NResponse> {
         }
 
         const data = await response.json()
+
+        // Handle new response format: { text: "...", success: true }
+        if (data.text !== undefined) {
+            return {
+                success: data.success ?? true,
+                data: { output: data.text }
+            }
+        }
+
+        // Fallback for legacy format
         return { success: true, data }
     } catch (error) {
         console.error('N8N Query Error:', error)

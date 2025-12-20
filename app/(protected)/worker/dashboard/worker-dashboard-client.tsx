@@ -27,6 +27,7 @@ import {
 } from "@/components/ui/table"
 import { useAuthStore } from "@/lib/store/auth-store"
 import { addTransaction } from "@/lib/actions/n8n"
+import { toast } from "sonner"
 
 const categories = [
     "Tur Satışı",
@@ -50,6 +51,100 @@ interface WorkerDashboardClientProps {
     }>
 }
 
+// Manual form fields component - OUTSIDE main component to prevent focus loss
+function ManualFormFields({
+    formData,
+    setFormData,
+    isLoading,
+}: {
+    formData: {
+        date: string
+        amount: string
+        type: "INCOME" | "EXPENSE"
+        category: string
+        description: string
+    }
+    setFormData: React.Dispatch<React.SetStateAction<typeof formData>>
+    isLoading: boolean
+}) {
+    return (
+        <>
+            <div className="grid grid-cols-2 gap-4">
+                <div className="space-y-2">
+                    <Label htmlFor="manual-date">Tarih</Label>
+                    <Input
+                        id="manual-date"
+                        type="date"
+                        value={formData.date}
+                        onChange={(e) => setFormData(prev => ({ ...prev, date: e.target.value }))}
+                        disabled={isLoading}
+                    />
+                </div>
+                <div className="space-y-2">
+                    <Label htmlFor="manual-amount">Tutar (₺)</Label>
+                    <Input
+                        id="manual-amount"
+                        type="number"
+                        placeholder="0.00"
+                        value={formData.amount}
+                        onChange={(e) => setFormData(prev => ({ ...prev, amount: e.target.value }))}
+                        disabled={isLoading}
+                    />
+                </div>
+            </div>
+
+            <div className="grid grid-cols-2 gap-4">
+                <div className="space-y-2">
+                    <Label>Tür</Label>
+                    <Select
+                        value={formData.type}
+                        onValueChange={(value: "INCOME" | "EXPENSE") => setFormData(prev => ({ ...prev, type: value }))}
+                        disabled={isLoading}
+                    >
+                        <SelectTrigger>
+                            <SelectValue />
+                        </SelectTrigger>
+                        <SelectContent>
+                            <SelectItem value="INCOME">Gelir</SelectItem>
+                            <SelectItem value="EXPENSE">Gider</SelectItem>
+                        </SelectContent>
+                    </Select>
+                </div>
+                <div className="space-y-2">
+                    <Label>Kategori</Label>
+                    <Select
+                        value={formData.category}
+                        onValueChange={(value) => setFormData(prev => ({ ...prev, category: value }))}
+                        disabled={isLoading}
+                    >
+                        <SelectTrigger>
+                            <SelectValue placeholder="Seçin..." />
+                        </SelectTrigger>
+                        <SelectContent>
+                            {categories.map((cat) => (
+                                <SelectItem key={cat} value={cat}>
+                                    {cat}
+                                </SelectItem>
+                            ))}
+                        </SelectContent>
+                    </Select>
+                </div>
+            </div>
+
+            <div className="space-y-2">
+                <Label htmlFor="manual-description">Açıklama</Label>
+                <Input
+                    id="manual-description"
+                    placeholder="İşlem açıklaması..."
+                    value={formData.description}
+                    onChange={(e) => setFormData(prev => ({ ...prev, description: e.target.value }))}
+                    disabled={isLoading}
+                />
+            </div>
+        </>
+    )
+}
+
 export function WorkerDashboardClient({ recentTransactions }: WorkerDashboardClientProps) {
     const router = useRouter()
     const user = useAuthStore((state) => state.user)
@@ -57,7 +152,6 @@ export function WorkerDashboardClient({ recentTransactions }: WorkerDashboardCli
     // AI Input state
     const [aiInput, setAiInput] = useState("")
     const [aiLoading, setAiLoading] = useState(false)
-    const [aiResult, setAiResult] = useState<string | null>(null)
 
     // Manual form state
     const [manualForm, setManualForm] = useState({
@@ -73,23 +167,27 @@ export function WorkerDashboardClient({ recentTransactions }: WorkerDashboardCli
         if (!aiInput.trim()) return
 
         setAiLoading(true)
-        setAiResult(null)
 
         try {
             const response = await addTransaction(aiInput)
 
             if (response.success) {
-                setAiResult("✅ İşlem başarıyla kaydedildi! Sayfa yenileniyor...")
+                toast.success("İşlem Başarıyla Eklendi", {
+                    description: "Sayfa yenileniyor...",
+                })
                 setAiInput("")
-                // Refresh the page to get updated data
                 setTimeout(() => {
                     router.refresh()
-                }, 1500)
+                }, 1000)
             } else {
-                setAiResult(`❌ ${response.error || 'İşlem kaydedilemedi. Lütfen tekrar deneyin.'}`)
+                toast.error("Hata", {
+                    description: response.error || "İşlem kaydedilemedi. Lütfen tekrar deneyin.",
+                })
             }
         } catch {
-            setAiResult("❌ Bağlantı hatası oluştu.")
+            toast.error("Bağlantı Hatası", {
+                description: "Sunucuya bağlanılamadı.",
+            })
         } finally {
             setAiLoading(false)
         }
@@ -99,6 +197,9 @@ export function WorkerDashboardClient({ recentTransactions }: WorkerDashboardCli
         e.preventDefault()
 
         if (!manualForm.amount || !manualForm.category || !manualForm.description) {
+            toast.error("Eksik Bilgi", {
+                description: "Lütfen tüm alanları doldurun.",
+            })
             return
         }
 
@@ -111,6 +212,9 @@ export function WorkerDashboardClient({ recentTransactions }: WorkerDashboardCli
             const response = await addTransaction(text)
 
             if (response.success) {
+                toast.success("İşlem Başarıyla Eklendi", {
+                    description: "Sayfa yenileniyor...",
+                })
                 setManualForm({
                     date: new Date().toISOString().split("T")[0],
                     amount: "",
@@ -118,10 +222,18 @@ export function WorkerDashboardClient({ recentTransactions }: WorkerDashboardCli
                     category: "",
                     description: "",
                 })
-                router.refresh()
+                setTimeout(() => {
+                    router.refresh()
+                }, 1000)
+            } else {
+                toast.error("Hata", {
+                    description: response.error || "İşlem kaydedilemedi.",
+                })
             }
-        } catch (error) {
-            console.error('Manual submit error:', error)
+        } catch {
+            toast.error("Bağlantı Hatası", {
+                description: "Sunucuya bağlanılamadı.",
+            })
         } finally {
             setManualLoading(false)
         }
@@ -171,8 +283,9 @@ export function WorkerDashboardClient({ recentTransactions }: WorkerDashboardCli
                         <TabsContent value="ai">
                             <div className="space-y-4">
                                 <div className="space-y-2">
-                                    <Label>İşlemi Doğal Dilde Yazın</Label>
+                                    <Label htmlFor="ai-text-input">İşlemi Doğal Dilde Yazın</Label>
                                     <Textarea
+                                        id="ai-text-input"
                                         placeholder="Örn: Bugün Ahmet'e 500 TL mazot parası verdim"
                                         value={aiInput}
                                         onChange={(e) => setAiInput(e.target.value)}
@@ -184,13 +297,6 @@ export function WorkerDashboardClient({ recentTransactions }: WorkerDashboardCli
                                     </p>
                                 </div>
 
-                                {aiResult && (
-                                    <div className={`p-3 rounded-lg ${aiResult.startsWith("✅") ? "bg-green-500/10 text-green-600" : "bg-red-500/10 text-red-600"
-                                        }`}>
-                                        {aiResult}
-                                    </div>
-                                )}
-
                                 <Button
                                     onClick={handleAISubmit}
                                     disabled={aiLoading || !aiInput.trim()}
@@ -199,7 +305,7 @@ export function WorkerDashboardClient({ recentTransactions }: WorkerDashboardCli
                                     {aiLoading ? (
                                         <>
                                             <Loader2 className="mr-2 h-4 w-4 animate-spin" />
-                                            n8n&apos;e Gönderiliyor...
+                                            Gönderiliyor...
                                         </>
                                     ) : (
                                         <>
@@ -213,78 +319,11 @@ export function WorkerDashboardClient({ recentTransactions }: WorkerDashboardCli
 
                         <TabsContent value="manual">
                             <form onSubmit={handleManualSubmit} className="space-y-4">
-                                <div className="grid grid-cols-2 gap-4">
-                                    <div className="space-y-2">
-                                        <Label htmlFor="date">Tarih</Label>
-                                        <Input
-                                            id="date"
-                                            type="date"
-                                            value={manualForm.date}
-                                            onChange={(e) => setManualForm({ ...manualForm, date: e.target.value })}
-                                            disabled={manualLoading}
-                                        />
-                                    </div>
-                                    <div className="space-y-2">
-                                        <Label htmlFor="amount">Tutar (₺)</Label>
-                                        <Input
-                                            id="amount"
-                                            type="number"
-                                            placeholder="0.00"
-                                            value={manualForm.amount}
-                                            onChange={(e) => setManualForm({ ...manualForm, amount: e.target.value })}
-                                            disabled={manualLoading}
-                                        />
-                                    </div>
-                                </div>
-
-                                <div className="grid grid-cols-2 gap-4">
-                                    <div className="space-y-2">
-                                        <Label>Tür</Label>
-                                        <Select
-                                            value={manualForm.type}
-                                            onValueChange={(value: "INCOME" | "EXPENSE") => setManualForm({ ...manualForm, type: value })}
-                                            disabled={manualLoading}
-                                        >
-                                            <SelectTrigger>
-                                                <SelectValue />
-                                            </SelectTrigger>
-                                            <SelectContent>
-                                                <SelectItem value="INCOME">Gelir</SelectItem>
-                                                <SelectItem value="EXPENSE">Gider</SelectItem>
-                                            </SelectContent>
-                                        </Select>
-                                    </div>
-                                    <div className="space-y-2">
-                                        <Label>Kategori</Label>
-                                        <Select
-                                            value={manualForm.category}
-                                            onValueChange={(value) => setManualForm({ ...manualForm, category: value })}
-                                            disabled={manualLoading}
-                                        >
-                                            <SelectTrigger>
-                                                <SelectValue placeholder="Seçin..." />
-                                            </SelectTrigger>
-                                            <SelectContent>
-                                                {categories.map((cat) => (
-                                                    <SelectItem key={cat} value={cat}>
-                                                        {cat}
-                                                    </SelectItem>
-                                                ))}
-                                            </SelectContent>
-                                        </Select>
-                                    </div>
-                                </div>
-
-                                <div className="space-y-2">
-                                    <Label htmlFor="description">Açıklama</Label>
-                                    <Input
-                                        id="description"
-                                        placeholder="İşlem açıklaması..."
-                                        value={manualForm.description}
-                                        onChange={(e) => setManualForm({ ...manualForm, description: e.target.value })}
-                                        disabled={manualLoading}
-                                    />
-                                </div>
+                                <ManualFormFields
+                                    formData={manualForm}
+                                    setFormData={setManualForm}
+                                    isLoading={manualLoading}
+                                />
 
                                 <Button type="submit" disabled={manualLoading} className="w-full">
                                     {manualLoading ? (

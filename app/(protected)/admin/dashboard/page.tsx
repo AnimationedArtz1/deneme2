@@ -12,6 +12,7 @@ import {
 import { getDashboardStats, getRecentTransactions, getWeeklyStats, getExpenseDistribution } from "@/lib/actions/db"
 import { WeeklyChart } from "@/components/charts/weekly-chart"
 import { ExpensePieChart } from "@/components/charts/expense-pie-chart"
+import { AdminAiInput } from "./admin-ai-input"
 
 export const dynamic = 'force-dynamic'
 
@@ -26,6 +27,9 @@ export default async function AdminDashboard() {
 
     return (
         <div className="space-y-6">
+            {/* AI Quick Add - Prominent at top */}
+            <AdminAiInput />
+
             {/* Stats Cards */}
             <div className="grid gap-4 md:grid-cols-3">
                 <Card className="relative overflow-hidden">
