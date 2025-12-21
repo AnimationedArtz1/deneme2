@@ -225,12 +225,19 @@ export default function TransactionsPage() {
         return () => clearInterval(interval)
     }, [loadData])
 
-    const filteredTransactions = transactions.filter((t) => {
-        const matchesSearch = t.description.toLowerCase().includes(searchTerm.toLowerCase()) ||
-            t.category.toLowerCase().includes(searchTerm.toLowerCase())
-        const matchesType = filterType === "all" || t.type === filterType
-        return matchesSearch && matchesType
-    })
+    const filteredTransactions = transactions
+        .filter((t) => {
+            const matchesSearch = t.description.toLowerCase().includes(searchTerm.toLowerCase()) ||
+                t.category.toLowerCase().includes(searchTerm.toLowerCase())
+            const matchesType = filterType === "all" || t.type === filterType
+            return matchesSearch && matchesType
+        })
+        .sort((a, b) => {
+            // Sort by created_at descending (newest first)
+            const dateA = new Date(a.created_at || a.date || 0).getTime()
+            const dateB = new Date(b.created_at || b.date || 0).getTime()
+            return dateB - dateA
+        })
 
     const handleExport = () => {
         exportToCSV(filteredTransactions)
