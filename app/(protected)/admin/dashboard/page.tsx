@@ -1,6 +1,13 @@
-import { TrendingUp, TrendingDown, Wallet, ArrowUpRight, ArrowDownRight, Receipt } from "lucide-react"
+"use client"
+
+import { useState, useEffect, useCallback } from "react"
+import { useRouter } from "next/navigation"
+import { TrendingUp, TrendingDown, Wallet, ArrowUpRight, ArrowDownRight, Receipt, Sparkles, Loader2, RefreshCw } from "lucide-react"
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card"
 import { Badge } from "@/components/ui/badge"
+import { Button } from "@/components/ui/button"
+import { Textarea } from "@/components/ui/textarea"
+import { Label } from "@/components/ui/label"
 import {
     Table,
     TableBody,
@@ -9,26 +16,195 @@ import {
     TableHeader,
     TableRow,
 } from "@/components/ui/table"
-import { getDashboardStats, getRecentTransactions, getWeeklyStats, getExpenseDistribution } from "@/lib/actions/db"
 import { WeeklyChart } from "@/components/charts/weekly-chart"
 import { ExpensePieChart } from "@/components/charts/expense-pie-chart"
-import { AdminAiInput } from "./admin-ai-input"
+import {
+    fetchDashboardData,
+    addTransaction,
+    type Transaction,
+    type DashboardStats
+} from "@/lib/actions/n8n"
+import { calculateWeeklyStats, calculateExpenseDistribution } from "@/lib/utils/dashboard"
+import { toast } from "sonner"
 
-export const dynamic = 'force-dynamic'
+// Refresh interval: 5 minutes
+const REFRESH_INTERVAL = 5 * 60 * 1000
 
-export default async function AdminDashboard() {
-    // Fetch data directly from PostgreSQL
-    const [stats, transactions, weeklyData, expenseData] = await Promise.all([
-        getDashboardStats(),
-        getRecentTransactions(5),
-        getWeeklyStats(),
-        getExpenseDistribution(),
-    ])
+export default function AdminDashboard() {
+    const router = useRouter()
+    const [stats, setStats] = useState<DashboardStats>({ income: 0, expense: 0, balance: 0 })
+    const [transactions, setTransactions] = useState<Transaction[]>([])
+    const [weeklyData, setWeeklyData] = useState<{ name: string; gelir: number; gider: number }[]>([])
+    const [expenseData, setExpenseData] = useState<{ name: string; value: number; color: string }[]>([])
+    const [isLoading, setIsLoading] = useState(true)
+    const [isRefreshing, setIsRefreshing] = useState(false)
+    const [lastUpdated, setLastUpdated] = useState<Date | null>(null)
+
+    // AI Input state
+    const [aiInput, setAiInput] = useState("")
+    const [aiLoading, setAiLoading] = useState(false)
+
+    // Fetch data from webhook
+    const loadData = useCallback(async (showRefreshToast = false) => {
+        try {
+            if (showRefreshToast) setIsRefreshing(true)
+
+            const data = await fetchDashboardData()
+
+            setStats(data.stats)
+            setTransactions(data.transactions)
+            setWeeklyData(calculateWeeklyStats(data.transactions))
+            setExpenseData(calculateExpenseDistribution(data.transactions))
+            setLastUpdated(new Date())
+
+            if (showRefreshToast) {
+                toast.success("Veriler Güncellendi", {
+                    description: `${data.transactions.length} işlem yüklendi`,
+                })
+            }
+        } catch (error) {
+            console.error('Data load error:', error)
+            if (showRefreshToast) {
+                toast.error("Veri Yükleme Hatası", {
+                    description: "Veriler alınamadı, tekrar deneyiniz.",
+                })
+            }
+        } finally {
+            setIsLoading(false)
+            setIsRefreshing(false)
+        }
+    }, [])
+
+    // Initial load
+    useEffect(() => {
+        loadData()
+    }, [loadData])
+
+    // Auto-refresh every 5 minutes
+    useEffect(() => {
+        const interval = setInterval(() => {
+            loadData()
+        }, REFRESH_INTERVAL)
+
+        return () => clearInterval(interval)
+    }, [loadData])
+
+    // Handle AI Submit
+    const handleAISubmit = async () => {
+        if (!aiInput.trim()) return
+
+        setAiLoading(true)
+
+        try {
+            const response = await addTransaction(aiInput)
+
+            if (response.success) {
+                toast.success("İşlem Başarıyla Eklendi", {
+                    description: "Veriler yenileniyor...",
+                })
+                setAiInput("")
+                // Reload data after adding transaction
+                setTimeout(() => {
+                    loadData(false)
+                    router.refresh()
+                }, 1500)
+            } else {
+                toast.error("Hata", {
+                    description: response.error || "İşlem kaydedilemedi.",
+                })
+            }
+        } catch {
+            toast.error("Bağlantı Hatası", {
+                description: "Sunucuya bağlanılamadı.",
+            })
+        } finally {
+            setAiLoading(false)
+        }
+    }
+
+    // Manual refresh
+    const handleRefresh = () => {
+        loadData(true)
+    }
+
+    if (isLoading) {
+        return (
+            <div className="flex items-center justify-center h-64">
+                <div className="flex flex-col items-center gap-4">
+                    <Loader2 className="h-8 w-8 animate-spin text-primary" />
+                    <p className="text-muted-foreground">Veriler yükleniyor...</p>
+                </div>
+            </div>
+        )
+    }
 
     return (
         <div className="space-y-6">
-            {/* AI Quick Add - Prominent at top */}
-            <AdminAiInput />
+            {/* Header with Refresh */}
+            <div className="flex items-center justify-between">
+                <div>
+                    <h2 className="text-2xl font-bold">Genel Bakış</h2>
+                    {lastUpdated && (
+                        <p className="text-xs text-muted-foreground">
+                            Son güncelleme: {lastUpdated.toLocaleTimeString("tr-TR")}
+                        </p>
+                    )}
+                </div>
+                <Button
+                    variant="outline"
+                    size="sm"
+                    onClick={handleRefresh}
+                    disabled={isRefreshing}
+                >
+                    <RefreshCw className={`h-4 w-4 mr-2 ${isRefreshing ? 'animate-spin' : ''}`} />
+                    Yenile
+                </Button>
+            </div>
+
+            {/* AI Quick Add */}
+            <Card className="bg-gradient-to-r from-primary/5 via-accent/5 to-primary/5 border-primary/20">
+                <CardHeader className="pb-3">
+                    <CardTitle className="flex items-center gap-2 text-lg">
+                        <Sparkles className="h-5 w-5 text-primary" />
+                        Hızlı İşlem Ekle
+                    </CardTitle>
+                    <CardDescription>
+                        Yapay zeka ile doğal dilde işlem ekleyin
+                    </CardDescription>
+                </CardHeader>
+                <CardContent>
+                    <div className="space-y-4">
+                        <div className="space-y-2">
+                            <Label htmlFor="ai-input">İşlemi Yazın</Label>
+                            <Textarea
+                                id="ai-input"
+                                placeholder="Örn: Bugün Ahmet'e 500 TL mazot parası verdim"
+                                value={aiInput}
+                                onChange={(e) => setAiInput(e.target.value)}
+                                className="min-h-[80px] resize-none"
+                                disabled={aiLoading}
+                            />
+                        </div>
+                        <Button
+                            onClick={handleAISubmit}
+                            disabled={aiLoading || !aiInput.trim()}
+                            className="w-full"
+                        >
+                            {aiLoading ? (
+                                <>
+                                    <Loader2 className="mr-2 h-4 w-4 animate-spin" />
+                                    Gönderiliyor...
+                                </>
+                            ) : (
+                                <>
+                                    <Sparkles className="mr-2 h-4 w-4" />
+                                    AI ile Kaydet
+                                </>
+                            )}
+                        </Button>
+                    </div>
+                </CardContent>
+            </Card>
 
             {/* Stats Cards */}
             <div className="grid gap-4 md:grid-cols-3">
@@ -49,7 +225,7 @@ export default async function AdminDashboard() {
                         <div className="flex items-center gap-1 text-xs text-muted-foreground mt-1">
                             <ArrowUpRight className="h-3 w-3 text-green-500" />
                             <span className="text-green-500">Canlı Veri</span>
-                            <span>PostgreSQL</span>
+                            <span>Webhook</span>
                         </div>
                     </CardContent>
                 </Card>
@@ -71,7 +247,7 @@ export default async function AdminDashboard() {
                         <div className="flex items-center gap-1 text-xs text-muted-foreground mt-1">
                             <ArrowDownRight className="h-3 w-3 text-red-500" />
                             <span className="text-red-500">Canlı Veri</span>
-                            <span>PostgreSQL</span>
+                            <span>Webhook</span>
                         </div>
                     </CardContent>
                 </Card>
@@ -93,7 +269,7 @@ export default async function AdminDashboard() {
                         <div className="flex items-center gap-1 text-xs text-muted-foreground mt-1">
                             <ArrowUpRight className="h-3 w-3 text-primary" />
                             <span className="text-primary">Canlı Veri</span>
-                            <span>PostgreSQL</span>
+                            <span>Webhook</span>
                         </div>
                     </CardContent>
                 </Card>
@@ -137,13 +313,13 @@ export default async function AdminDashboard() {
                 <CardHeader>
                     <CardTitle>Son İşlemler</CardTitle>
                     <CardDescription>
-                        Veritabanından alınan son finansal hareketler
+                        Webhook&apos;tan alınan son finansal hareketler
                     </CardDescription>
                 </CardHeader>
                 <CardContent>
                     {transactions.length === 0 ? (
                         <div className="text-center py-8 text-muted-foreground">
-                            Henüz işlem bulunmuyor. Veritabanı bağlantısını kontrol edin.
+                            Henüz işlem bulunmuyor.
                         </div>
                     ) : (
                         <Table>
@@ -157,7 +333,7 @@ export default async function AdminDashboard() {
                                 </TableRow>
                             </TableHeader>
                             <TableBody>
-                                {transactions.map((transaction) => (
+                                {transactions.slice(0, 5).map((transaction) => (
                                     <TableRow key={transaction.id}>
                                         <TableCell className="font-medium">
                                             {transaction.date ? new Date(transaction.date).toLocaleDateString("tr-TR") : '-'}

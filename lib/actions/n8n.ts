@@ -2,9 +2,10 @@
 
 import { revalidatePath } from 'next/cache'
 
-// HARDCODED Webhook URLs - Do not use environment variables
+// HARDCODED Webhook URLs
 const N8N_TRANSACTION_WEBHOOK = 'https://n8n.globaltripmarket.com/webhook/islem-ekle'
 const N8N_CHATBOT_WEBHOOK = 'https://n8n.globaltripmarket.com/webhook/chatbot'
+const N8N_DASHBOARD_DATA_WEBHOOK = 'https://n8n.globaltripmarket.com/webhook/dashboard-data'
 
 export interface N8NResponse {
     success: boolean
@@ -12,10 +13,98 @@ export interface N8NResponse {
     error?: string
 }
 
+export interface Transaction {
+    id: string
+    amount: number
+    type: 'INCOME' | 'EXPENSE'
+    category: string
+    description: string
+    date: string
+    created_at: string
+}
+
+export interface DashboardStats {
+    income: number
+    expense: number
+    balance: number
+}
+
+export interface DashboardData {
+    transactions: Transaction[]
+    stats: DashboardStats
+}
+
+/**
+ * Fetch all dashboard data from n8n webhook
+ * This replaces direct PostgreSQL access with webhook-based data fetching
+ */
+export async function fetchDashboardData(): Promise<DashboardData> {
+    try {
+        const response = await fetch(N8N_DASHBOARD_DATA_WEBHOOK, {
+            method: 'GET',
+            headers: {
+                'Content-Type': 'application/json',
+            },
+            cache: 'no-store', // Always fetch fresh data
+        })
+
+        if (!response.ok) {
+            console.error('Dashboard data fetch failed:', response.status)
+            return { transactions: [], stats: { income: 0, expense: 0, balance: 0 } }
+        }
+
+        const rawData = await response.json()
+
+        // Parse the n8n response format: [{ data: [{ transactions: [...] }] }]
+        let transactions: Transaction[] = []
+
+        if (Array.isArray(rawData) && rawData[0]?.data?.[0]?.transactions) {
+            const rawTransactions = rawData[0].data[0].transactions
+            transactions = rawTransactions
+                .filter((t: { description?: string; amount?: string }) =>
+                    t.description && !t.description.includes('[object Object]') && parseFloat(t.amount || '0') > 0
+                )
+                .map((t: { id: number; amount: string; type: string; category: string; description: string; created_at: string }) => ({
+                    id: String(t.id),
+                    amount: parseFloat(t.amount) || 0,
+                    type: t.type as 'INCOME' | 'EXPENSE',
+                    category: t.category || 'Diğer',
+                    description: t.description || '',
+                    date: t.created_at ? new Date(t.created_at).toISOString().split('T')[0] : '',
+                    created_at: t.created_at || '',
+                }))
+                .sort((a: Transaction, b: Transaction) => new Date(b.created_at).getTime() - new Date(a.created_at).getTime())
+        }
+
+        // Calculate stats from transactions
+        let income = 0
+        let expense = 0
+
+        for (const t of transactions) {
+            if (t.type === 'INCOME') {
+                income += t.amount
+            } else {
+                expense += t.amount
+            }
+        }
+
+        return {
+            transactions,
+            stats: {
+                income,
+                expense,
+                balance: income - expense,
+            }
+        }
+    } catch (error) {
+        console.error('Dashboard data fetch error:', error)
+        return { transactions: [], stats: { income: 0, expense: 0, balance: 0 } }
+    }
+}
+
 /**
  * Send natural language transaction to n8n AI agent for parsing and saving
  * Example: "Ahmet'e 500 TL mazot parası verdim"
- * After successful processing, n8n will save to PostgreSQL
  */
 export async function addTransaction(text: string): Promise<N8NResponse> {
     try {
@@ -34,15 +123,24 @@ export async function addTransaction(text: string): Promise<N8NResponse> {
             return { success: false, error: `HTTP ${response.status}` }
         }
 
-        const data = await response.json()
+        // Try to parse response, but treat any 200 OK as success
+        try {
+            const data = await response.json()
+            // Check if response explicitly indicates failure
+            if (data.success === false || data.error) {
+                return { success: false, error: data.error || 'İşlem başarısız' }
+            }
+        } catch {
+            // If JSON parsing fails but we got 200 OK, still consider it successful
+        }
 
-        // Revalidate all pages to refresh data from database
+        // Revalidate all pages to refresh data
         revalidatePath('/')
         revalidatePath('/admin/dashboard')
         revalidatePath('/worker/dashboard')
         revalidatePath('/transactions')
 
-        return { success: true, data }
+        return { success: true }
     } catch (error) {
         console.error('N8N Transaction Error:', error)
         return {
@@ -74,12 +172,16 @@ export async function aiQuery(userMessage: string): Promise<N8NResponse> {
 
         const data = await response.json()
 
-        // Handle new response format: { text: "...", success: true }
+        // Handle response format: { text: "...", success: true } or { output: "..." }
         if (data.text !== undefined) {
             return {
                 success: data.success ?? true,
                 data: { output: data.text }
             }
+        }
+
+        if (data.output !== undefined) {
+            return { success: true, data: { output: data.output } }
         }
 
         // Fallback for legacy format

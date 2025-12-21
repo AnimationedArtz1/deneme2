@@ -1,6 +1,6 @@
 "use client"
 
-import { useState } from "react"
+import { useState, useRef, useEffect } from "react"
 import { Send, Bot, User, Sparkles, Loader2 } from "lucide-react"
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card"
 import { Button } from "@/components/ui/button"
@@ -34,6 +34,21 @@ export default function QueryPage() {
     ])
     const [input, setInput] = useState("")
     const [isLoading, setIsLoading] = useState(false)
+
+    // Ref for auto-scroll
+    const messagesEndRef = useRef<HTMLDivElement>(null)
+    const scrollAreaRef = useRef<HTMLDivElement>(null)
+
+    // Auto-scroll to bottom when messages change
+    const scrollToBottom = () => {
+        if (messagesEndRef.current) {
+            messagesEndRef.current.scrollIntoView({ behavior: "smooth" })
+        }
+    }
+
+    useEffect(() => {
+        scrollToBottom()
+    }, [messages, isLoading])
 
     const handleSubmit = async (question?: string) => {
         const prompt = question || input.trim()
@@ -114,7 +129,7 @@ export default function QueryPage() {
                 </CardHeader>
                 <CardContent className="flex flex-col h-[calc(100%-5rem)] p-0">
                     {/* Messages */}
-                    <ScrollArea className="flex-1 p-4">
+                    <ScrollArea className="flex-1 p-4" ref={scrollAreaRef}>
                         <div className="space-y-4">
                             {messages.map((message) => (
                                 <div
@@ -133,8 +148,8 @@ export default function QueryPage() {
                                     </Avatar>
                                     <div
                                         className={`rounded-lg px-4 py-2 max-w-[80%] ${message.role === "user"
-                                                ? "bg-primary text-primary-foreground"
-                                                : "bg-muted"
+                                            ? "bg-primary text-primary-foreground"
+                                            : "bg-muted"
                                             }`}
                                     >
                                         <p className="text-sm whitespace-pre-wrap">{message.content}</p>
@@ -160,6 +175,8 @@ export default function QueryPage() {
                                     </div>
                                 </div>
                             )}
+                            {/* Auto-scroll anchor */}
+                            <div ref={messagesEndRef} />
                         </div>
                     </ScrollArea>
 
