@@ -16,8 +16,11 @@ import {
     TableHeader,
     TableRow,
 } from "@/components/ui/table"
+import { TransactionCard } from "@/components/transaction-card"
 import { useAuthStore } from "@/lib/store/auth-store"
+import { useTranslation } from "@/lib/store/language-store"
 import { addTransaction, fetchDashboardData, type Transaction } from "@/lib/actions/n8n"
+import { getCurrencySymbol } from "@/lib/utils/dashboard"
 import { toast } from "sonner"
 
 // Refresh interval: 5 minutes
@@ -26,6 +29,7 @@ const REFRESH_INTERVAL = 5 * 60 * 1000
 export default function WorkerDashboard() {
     const router = useRouter()
     const user = useAuthStore((state) => state.user)
+    const { t, language } = useTranslation()
 
     // Data state
     const [transactions, setTransactions] = useState<Transaction[]>([])
@@ -45,18 +49,18 @@ export default function WorkerDashboard() {
             setTransactions(data.transactions.slice(0, 10))
 
             if (showToast) {
-                toast.success("Veriler Güncellendi")
+                toast.success(t.toast.dataUpdated)
             }
         } catch (error) {
             console.error('Data load error:', error)
             if (showToast) {
-                toast.error("Veri Yükleme Hatası")
+                toast.error(t.toast.dataLoadError)
             }
         } finally {
             setIsDataLoading(false)
             setIsRefreshing(false)
         }
-    }, [])
+    }, [t])
 
     // Initial load
     useEffect(() => {
@@ -81,8 +85,8 @@ export default function WorkerDashboard() {
             const response = await addTransaction(aiInput)
 
             if (response.success) {
-                toast.success("İşlem Başarıyla Eklendi", {
-                    description: "Veriler yenileniyor...",
+                toast.success(t.toast.success, {
+                    description: t.toast.refreshing,
                 })
                 setAiInput("")
                 setTimeout(() => {
@@ -90,13 +94,13 @@ export default function WorkerDashboard() {
                     router.refresh()
                 }, 1500)
             } else {
-                toast.error("Hata", {
-                    description: response.error || "İşlem kaydedilemedi.",
+                toast.error(t.toast.error, {
+                    description: response.error || t.toast.saveFailed,
                 })
             }
         } catch {
-            toast.error("Bağlantı Hatası", {
-                description: "Sunucuya bağlanılamadı.",
+            toast.error(t.toast.connectionError, {
+                description: t.toast.serverError,
             })
         } finally {
             setAiLoading(false)
@@ -112,7 +116,7 @@ export default function WorkerDashboard() {
             <div className="flex items-center justify-center h-64">
                 <div className="flex flex-col items-center gap-4">
                     <Loader2 className="h-8 w-8 animate-spin text-primary" />
-                    <p className="text-muted-foreground">Veriler yükleniyor...</p>
+                    <p className="text-muted-foreground">{t.common.loading}</p>
                 </div>
             </div>
         )
@@ -123,14 +127,14 @@ export default function WorkerDashboard() {
             {/* Welcome Card */}
             <Card className="bg-gradient-to-r from-primary/10 to-accent/10 border-none">
                 <CardContent className="pt-6">
-                    <div className="flex items-center justify-between">
+                    <div className="flex flex-col sm:flex-row items-start sm:items-center justify-between gap-4">
                         <div className="flex items-center gap-4">
                             <div className="p-3 bg-primary/20 rounded-full">
                                 <Receipt className="h-6 w-6 text-primary" />
                             </div>
                             <div>
-                                <h2 className="text-xl font-semibold">Hoş geldin, {user?.displayName}!</h2>
-                                <p className="text-muted-foreground">AI ile doğal dilde işlem ekleyebilirsin.</p>
+                                <h2 className="text-xl font-semibold">{t.worker.welcome}, {user?.displayName}!</h2>
+                                <p className="text-muted-foreground">{t.worker.welcomeDesc}</p>
                             </div>
                         </div>
                         <Button
@@ -138,56 +142,57 @@ export default function WorkerDashboard() {
                             size="sm"
                             onClick={handleRefresh}
                             disabled={isRefreshing}
+                            className="min-h-[44px] sm:min-h-0"
                         >
                             <RefreshCw className={`h-4 w-4 mr-2 ${isRefreshing ? 'animate-spin' : ''}`} />
-                            Yenile
+                            {t.common.refresh}
                         </Button>
                     </div>
                 </CardContent>
             </Card>
 
-            {/* AI Quick Add - Only AI */}
+            {/* AI Quick Add */}
             <Card className="bg-gradient-to-r from-primary/5 via-accent/5 to-primary/5 border-primary/20">
                 <CardHeader className="pb-3">
                     <CardTitle className="flex items-center gap-2 text-lg">
                         <Sparkles className="h-5 w-5 text-primary" />
-                        Hızlı İşlem Ekle
+                        {t.dashboard.quickAdd}
                     </CardTitle>
                     <CardDescription>
-                        Yapay zeka ile doğal dilde işlem ekleyin
+                        {t.dashboard.quickAddDesc}
                     </CardDescription>
                 </CardHeader>
                 <CardContent>
                     <div className="space-y-4">
                         <div className="space-y-2">
-                            <Label htmlFor="worker-ai-input">İşlemi Doğal Dilde Yazın</Label>
+                            <Label htmlFor="worker-ai-input">{t.dashboard.writeNaturally}</Label>
                             <Textarea
                                 id="worker-ai-input"
-                                placeholder="Örn: Bugün Ahmet'e 500 TL mazot parası verdim"
+                                placeholder={t.dashboard.placeholder}
                                 value={aiInput}
                                 onChange={(e) => setAiInput(e.target.value)}
-                                className="min-h-[100px]"
+                                className="min-h-[100px] text-base"
                                 disabled={aiLoading}
                             />
                             <p className="text-xs text-muted-foreground">
-                                n8n webhook&apos;u yazınızı analiz edip veritabanına kaydedecektir.
+                                {t.dashboard.webhookNote}
                             </p>
                         </div>
 
                         <Button
                             onClick={handleAISubmit}
                             disabled={aiLoading || !aiInput.trim()}
-                            className="w-full"
+                            className="w-full min-h-[48px]"
                         >
                             {aiLoading ? (
                                 <>
                                     <Loader2 className="mr-2 h-4 w-4 animate-spin" />
-                                    Gönderiliyor...
+                                    {t.dashboard.sending}
                                 </>
                             ) : (
                                 <>
                                     <Sparkles className="mr-2 h-4 w-4" />
-                                    AI ile Kaydet
+                                    {t.dashboard.saveWithAI}
                                 </>
                             )}
                         </Button>
@@ -200,45 +205,72 @@ export default function WorkerDashboard() {
                 <CardHeader>
                     <CardTitle className="flex items-center gap-2">
                         <Clock className="h-5 w-5" />
-                        Son İşlemler
+                        {t.dashboard.recentTrans}
                     </CardTitle>
                     <CardDescription>
-                        Webhook&apos;tan alınan son 10 işlem
+                        {t.worker.last10}
                     </CardDescription>
                 </CardHeader>
                 <CardContent>
                     {transactions.length === 0 ? (
                         <div className="text-center py-8 text-muted-foreground">
-                            Henüz işlem bulunmuyor.
+                            {t.dashboard.noTransactions}
                         </div>
                     ) : (
-                        <Table>
-                            <TableHeader>
-                                <TableRow>
-                                    <TableHead>Tarih</TableHead>
-                                    <TableHead>Açıklama</TableHead>
-                                    <TableHead>Kategori</TableHead>
-                                    <TableHead className="text-right">Tutar</TableHead>
-                                </TableRow>
-                            </TableHeader>
-                            <TableBody>
+                        <>
+                            {/* Mobile Card View */}
+                            <div className="grid gap-4 md:hidden">
                                 {transactions.map((transaction) => (
-                                    <TableRow key={transaction.id}>
-                                        <TableCell className="font-medium">
-                                            {transaction.date ? new Date(transaction.date).toLocaleDateString("tr-TR") : '-'}
-                                        </TableCell>
-                                        <TableCell>{transaction.description}</TableCell>
-                                        <TableCell>
-                                            <Badge variant="outline">{transaction.category}</Badge>
-                                        </TableCell>
-                                        <TableCell className={`text-right font-medium ${transaction.type === "INCOME" ? "text-green-500" : "text-red-500"
-                                            }`}>
-                                            {transaction.type === "INCOME" ? "+" : "-"}₺{transaction.amount.toLocaleString("tr-TR")}
-                                        </TableCell>
-                                    </TableRow>
+                                    <TransactionCard
+                                        key={transaction.id}
+                                        transaction={transaction}
+                                        dateLabel={t.common.date}
+                                        categoryLabel={t.common.category}
+                                    />
                                 ))}
-                            </TableBody>
-                        </Table>
+                            </div>
+
+                            {/* Desktop Table View */}
+                            <div className="hidden md:block">
+                                <Table>
+                                    <TableHeader>
+                                        <TableRow>
+                                            <TableHead>{t.common.date}</TableHead>
+                                            <TableHead>{t.common.description}</TableHead>
+                                            <TableHead>{t.common.category}</TableHead>
+                                            <TableHead>{t.common.currency}</TableHead>
+                                            <TableHead className="text-right">{t.common.amount}</TableHead>
+                                        </TableRow>
+                                    </TableHeader>
+                                    <TableBody>
+                                        {transactions.map((transaction) => (
+                                            <TableRow key={transaction.id}>
+                                                <TableCell className="font-medium">
+                                                    {transaction.transaction_date
+                                                        ? new Date(transaction.transaction_date).toLocaleDateString(language === 'tr' ? 'tr-TR' : 'en-US')
+                                                        : '-'}
+                                                </TableCell>
+                                                <TableCell className="max-w-[200px] truncate">
+                                                    {transaction.description}
+                                                </TableCell>
+                                                <TableCell>
+                                                    <Badge variant="outline">{transaction.category}</Badge>
+                                                </TableCell>
+                                                <TableCell>
+                                                    <Badge variant="secondary">{transaction.currency}</Badge>
+                                                </TableCell>
+                                                <TableCell className={`text-right font-medium ${transaction.type === "INCOME" ? "text-green-500" : "text-red-500"
+                                                    }`}>
+                                                    {transaction.type === "INCOME" ? "+" : "-"}
+                                                    {getCurrencySymbol(transaction.currency)}
+                                                    {transaction.amount.toLocaleString('tr-TR')}
+                                                </TableCell>
+                                            </TableRow>
+                                        ))}
+                                    </TableBody>
+                                </Table>
+                            </div>
+                        </>
                     )}
                 </CardContent>
             </Card>

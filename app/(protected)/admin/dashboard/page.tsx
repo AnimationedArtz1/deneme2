@@ -2,7 +2,7 @@
 
 import { useState, useEffect, useCallback } from "react"
 import { useRouter } from "next/navigation"
-import { TrendingUp, TrendingDown, Wallet, ArrowUpRight, ArrowDownRight, Receipt, Sparkles, Loader2, RefreshCw, Clock } from "lucide-react"
+import { TrendingUp, TrendingDown, Wallet, ArrowUpRight, ArrowDownRight, Receipt, Sparkles, Loader2, RefreshCw, Clock, DollarSign } from "lucide-react"
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card"
 import { Badge } from "@/components/ui/badge"
 import { Button } from "@/components/ui/button"
@@ -18,21 +18,36 @@ import {
 } from "@/components/ui/table"
 import { WeeklyChart } from "@/components/charts/weekly-chart"
 import { ExpensePieChart } from "@/components/charts/expense-pie-chart"
+import { TransactionCard } from "@/components/transaction-card"
 import {
     fetchDashboardData,
     addTransaction,
     type Transaction,
-    type DashboardStats
+    type DashboardStats,
+    type Currency
 } from "@/lib/actions/n8n"
-import { calculateWeeklyStats, calculateExpenseDistribution } from "@/lib/utils/dashboard"
+import { calculateWeeklyStats, calculateExpenseDistribution, getCurrencySymbol } from "@/lib/utils/dashboard"
+import { useTranslation } from "@/lib/store/language-store"
 import { toast } from "sonner"
 
 // Refresh interval: 5 minutes
 const REFRESH_INTERVAL = 5 * 60 * 1000
 
+const currencyIcons: Record<Currency, React.ReactNode> = {
+    TRY: <span className="text-lg">₺</span>,
+    USD: <DollarSign className="h-4 w-4" />,
+    EUR: <span className="text-lg">€</span>,
+}
+
 export default function AdminDashboard() {
     const router = useRouter()
-    const [stats, setStats] = useState<DashboardStats>({ income: 0, expense: 0, balance: 0 })
+    const { t, language } = useTranslation()
+
+    const [stats, setStats] = useState<DashboardStats>({
+        TRY: { income: 0, expense: 0, balance: 0 },
+        USD: { income: 0, expense: 0, balance: 0 },
+        EUR: { income: 0, expense: 0, balance: 0 },
+    })
     const [transactions, setTransactions] = useState<Transaction[]>([])
     const [weeklyData, setWeeklyData] = useState<{ name: string; gelir: number; gider: number }[]>([])
     const [expenseData, setExpenseData] = useState<{ name: string; value: number; color: string }[]>([])
@@ -58,22 +73,22 @@ export default function AdminDashboard() {
             setLastUpdated(new Date())
 
             if (showRefreshToast) {
-                toast.success("Veriler Güncellendi", {
-                    description: `${data.transactions.length} işlem yüklendi`,
+                toast.success(t.toast.dataUpdated, {
+                    description: `${data.transactions.length} ${t.toast.transactionsLoaded}`,
                 })
             }
         } catch (error) {
             console.error('Data load error:', error)
             if (showRefreshToast) {
-                toast.error("Veri Yükleme Hatası", {
-                    description: "Veriler alınamadı, tekrar deneyiniz.",
+                toast.error(t.toast.dataLoadError, {
+                    description: t.toast.dataLoadFailed,
                 })
             }
         } finally {
             setIsLoading(false)
             setIsRefreshing(false)
         }
-    }, [])
+    }, [t])
 
     // Initial load
     useEffect(() => {
@@ -99,8 +114,8 @@ export default function AdminDashboard() {
             const response = await addTransaction(aiInput)
 
             if (response.success) {
-                toast.success("İşlem Başarıyla Eklendi", {
-                    description: "Veriler yenileniyor...",
+                toast.success(t.toast.success, {
+                    description: t.toast.refreshing,
                 })
                 setAiInput("")
                 setTimeout(() => {
@@ -108,13 +123,13 @@ export default function AdminDashboard() {
                     router.refresh()
                 }, 1500)
             } else {
-                toast.error("Hata", {
-                    description: response.error || "İşlem kaydedilemedi.",
+                toast.error(t.toast.error, {
+                    description: response.error || t.toast.saveFailed,
                 })
             }
         } catch {
-            toast.error("Bağlantı Hatası", {
-                description: "Sunucuya bağlanılamadı.",
+            toast.error(t.toast.connectionError, {
+                description: t.toast.serverError,
             })
         } finally {
             setAiLoading(false)
@@ -131,7 +146,7 @@ export default function AdminDashboard() {
             <div className="flex items-center justify-center h-64">
                 <div className="flex flex-col items-center gap-4">
                     <Loader2 className="h-8 w-8 animate-spin text-primary" />
-                    <p className="text-muted-foreground">Veriler yükleniyor...</p>
+                    <p className="text-muted-foreground">{t.common.loading}</p>
                 </div>
             </div>
         )
@@ -140,12 +155,12 @@ export default function AdminDashboard() {
     return (
         <div className="space-y-6">
             {/* Header with Refresh */}
-            <div className="flex items-center justify-between">
+            <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4">
                 <div>
-                    <h2 className="text-2xl font-bold">Genel Bakış</h2>
+                    <h2 className="text-2xl font-bold">{t.dashboard.title}</h2>
                     {lastUpdated && (
                         <p className="text-xs text-muted-foreground">
-                            Son güncelleme: {lastUpdated.toLocaleTimeString("tr-TR")}
+                            {t.dashboard.lastUpdate}: {lastUpdated.toLocaleTimeString(language === 'tr' ? 'tr-TR' : 'en-US')}
                         </p>
                     )}
                 </div>
@@ -154,54 +169,55 @@ export default function AdminDashboard() {
                     size="sm"
                     onClick={handleRefresh}
                     disabled={isRefreshing}
+                    className="min-h-[44px] sm:min-h-0"
                 >
                     <RefreshCw className={`h-4 w-4 mr-2 ${isRefreshing ? 'animate-spin' : ''}`} />
-                    Yenile
+                    {t.common.refresh}
                 </Button>
             </div>
 
-            {/* AI Quick Add - Only AI */}
+            {/* AI Quick Add */}
             <Card className="bg-gradient-to-r from-primary/5 via-accent/5 to-primary/5 border-primary/20">
                 <CardHeader className="pb-3">
                     <CardTitle className="flex items-center gap-2 text-lg">
                         <Sparkles className="h-5 w-5 text-primary" />
-                        Hızlı İşlem Ekle
+                        {t.dashboard.quickAdd}
                     </CardTitle>
                     <CardDescription>
-                        Yapay zeka ile doğal dilde işlem ekleyin
+                        {t.dashboard.quickAddDesc}
                     </CardDescription>
                 </CardHeader>
                 <CardContent>
                     <div className="space-y-4">
                         <div className="space-y-2">
-                            <Label htmlFor="admin-ai-input">İşlemi Doğal Dilde Yazın</Label>
+                            <Label htmlFor="admin-ai-input">{t.dashboard.writeNaturally}</Label>
                             <Textarea
                                 id="admin-ai-input"
-                                placeholder="Örn: Bugün Ahmet'e 500 TL mazot parası verdim"
+                                placeholder={t.dashboard.placeholder}
                                 value={aiInput}
                                 onChange={(e) => setAiInput(e.target.value)}
-                                className="min-h-[100px]"
+                                className="min-h-[100px] text-base"
                                 disabled={aiLoading}
                             />
                             <p className="text-xs text-muted-foreground">
-                                n8n webhook&apos;u yazınızı analiz edip veritabanına kaydedecektir.
+                                {t.dashboard.webhookNote}
                             </p>
                         </div>
 
                         <Button
                             onClick={handleAISubmit}
                             disabled={aiLoading || !aiInput.trim()}
-                            className="w-full"
+                            className="w-full min-h-[48px]"
                         >
                             {aiLoading ? (
                                 <>
                                     <Loader2 className="mr-2 h-4 w-4 animate-spin" />
-                                    Gönderiliyor...
+                                    {t.dashboard.sending}
                                 </>
                             ) : (
                                 <>
                                     <Sparkles className="mr-2 h-4 w-4" />
-                                    AI ile Kaydet
+                                    {t.dashboard.saveWithAI}
                                 </>
                             )}
                         </Button>
@@ -209,82 +225,85 @@ export default function AdminDashboard() {
                 </CardContent>
             </Card>
 
-            {/* Stats Cards */}
-            <div className="grid gap-4 md:grid-cols-3">
-                <Card className="relative overflow-hidden">
-                    <div className="absolute top-0 right-0 w-32 h-32 bg-green-500/10 rounded-full -mr-16 -mt-16" />
-                    <CardHeader className="flex flex-row items-center justify-between pb-2">
-                        <CardTitle className="text-sm font-medium text-muted-foreground">
-                            Toplam Gelir
-                        </CardTitle>
-                        <div className="p-2 bg-green-500/10 rounded-full">
-                            <TrendingUp className="h-4 w-4 text-green-500" />
-                        </div>
-                    </CardHeader>
-                    <CardContent>
-                        <div className="text-2xl font-bold text-green-500">
-                            ₺{stats.income.toLocaleString("tr-TR")}
-                        </div>
-                        <div className="flex items-center gap-1 text-xs text-muted-foreground mt-1">
-                            <ArrowUpRight className="h-3 w-3 text-green-500" />
-                            <span className="text-green-500">Canlı Veri</span>
-                        </div>
-                    </CardContent>
-                </Card>
-
-                <Card className="relative overflow-hidden">
-                    <div className="absolute top-0 right-0 w-32 h-32 bg-red-500/10 rounded-full -mr-16 -mt-16" />
-                    <CardHeader className="flex flex-row items-center justify-between pb-2">
-                        <CardTitle className="text-sm font-medium text-muted-foreground">
-                            Toplam Gider
-                        </CardTitle>
-                        <div className="p-2 bg-red-500/10 rounded-full">
-                            <TrendingDown className="h-4 w-4 text-red-500" />
-                        </div>
-                    </CardHeader>
-                    <CardContent>
-                        <div className="text-2xl font-bold text-red-500">
-                            ₺{stats.expense.toLocaleString("tr-TR")}
-                        </div>
-                        <div className="flex items-center gap-1 text-xs text-muted-foreground mt-1">
-                            <ArrowDownRight className="h-3 w-3 text-red-500" />
-                            <span className="text-red-500">Canlı Veri</span>
-                        </div>
-                    </CardContent>
-                </Card>
-
+            {/* Multi-Currency Stats Cards */}
+            <div className="grid gap-4 grid-cols-1 sm:grid-cols-2 lg:grid-cols-3">
+                {/* TRY Card */}
                 <Card className="relative overflow-hidden">
                     <div className="absolute top-0 right-0 w-32 h-32 bg-primary/10 rounded-full -mr-16 -mt-16" />
                     <CardHeader className="flex flex-row items-center justify-between pb-2">
                         <CardTitle className="text-sm font-medium text-muted-foreground">
-                            Net Bakiye
+                            TRY {t.common.balance}
                         </CardTitle>
                         <div className="p-2 bg-primary/10 rounded-full">
-                            <Wallet className="h-4 w-4 text-primary" />
+                            {currencyIcons.TRY}
                         </div>
                     </CardHeader>
                     <CardContent>
-                        <div className="text-2xl font-bold text-primary">
-                            ₺{stats.balance.toLocaleString("tr-TR")}
+                        <div className={`text-2xl font-bold ${stats.TRY.balance >= 0 ? 'text-green-500' : 'text-red-500'}`}>
+                            ₺{stats.TRY.balance.toLocaleString('tr-TR')}
                         </div>
-                        <div className="flex items-center gap-1 text-xs text-muted-foreground mt-1">
-                            <ArrowUpRight className="h-3 w-3 text-primary" />
-                            <span className="text-primary">Canlı Veri</span>
+                        <div className="flex items-center gap-4 text-xs mt-2">
+                            <span className="text-green-500">+₺{stats.TRY.income.toLocaleString('tr-TR')}</span>
+                            <span className="text-red-500">-₺{stats.TRY.expense.toLocaleString('tr-TR')}</span>
+                        </div>
+                    </CardContent>
+                </Card>
+
+                {/* USD Card */}
+                <Card className="relative overflow-hidden">
+                    <div className="absolute top-0 right-0 w-32 h-32 bg-green-500/10 rounded-full -mr-16 -mt-16" />
+                    <CardHeader className="flex flex-row items-center justify-between pb-2">
+                        <CardTitle className="text-sm font-medium text-muted-foreground">
+                            USD {t.common.balance}
+                        </CardTitle>
+                        <div className="p-2 bg-green-500/10 rounded-full">
+                            {currencyIcons.USD}
+                        </div>
+                    </CardHeader>
+                    <CardContent>
+                        <div className={`text-2xl font-bold ${stats.USD.balance >= 0 ? 'text-green-500' : 'text-red-500'}`}>
+                            ${stats.USD.balance.toLocaleString('en-US')}
+                        </div>
+                        <div className="flex items-center gap-4 text-xs mt-2">
+                            <span className="text-green-500">+${stats.USD.income.toLocaleString('en-US')}</span>
+                            <span className="text-red-500">-${stats.USD.expense.toLocaleString('en-US')}</span>
+                        </div>
+                    </CardContent>
+                </Card>
+
+                {/* EUR Card */}
+                <Card className="relative overflow-hidden sm:col-span-2 lg:col-span-1">
+                    <div className="absolute top-0 right-0 w-32 h-32 bg-blue-500/10 rounded-full -mr-16 -mt-16" />
+                    <CardHeader className="flex flex-row items-center justify-between pb-2">
+                        <CardTitle className="text-sm font-medium text-muted-foreground">
+                            EUR {t.common.balance}
+                        </CardTitle>
+                        <div className="p-2 bg-blue-500/10 rounded-full">
+                            {currencyIcons.EUR}
+                        </div>
+                    </CardHeader>
+                    <CardContent>
+                        <div className={`text-2xl font-bold ${stats.EUR.balance >= 0 ? 'text-green-500' : 'text-red-500'}`}>
+                            €{stats.EUR.balance.toLocaleString('de-DE')}
+                        </div>
+                        <div className="flex items-center gap-4 text-xs mt-2">
+                            <span className="text-green-500">+€{stats.EUR.income.toLocaleString('de-DE')}</span>
+                            <span className="text-red-500">-€{stats.EUR.expense.toLocaleString('de-DE')}</span>
                         </div>
                     </CardContent>
                 </Card>
             </div>
 
             {/* Charts */}
-            <div className="grid gap-4 md:grid-cols-2">
+            <div className="grid gap-4 grid-cols-1 lg:grid-cols-2">
                 <Card>
                     <CardHeader>
                         <CardTitle className="flex items-center gap-2">
                             <Receipt className="h-5 w-5" />
-                            Haftalık Finansal Durum
+                            {t.dashboard.weeklyStats}
                         </CardTitle>
                         <CardDescription>
-                            Bu haftanın gelir ve gider karşılaştırması
+                            {t.dashboard.weeklyDesc}
                         </CardDescription>
                     </CardHeader>
                     <CardContent>
@@ -296,10 +315,10 @@ export default function AdminDashboard() {
                     <CardHeader>
                         <CardTitle className="flex items-center gap-2">
                             <TrendingDown className="h-5 w-5" />
-                            Gider Dağılımı
+                            {t.dashboard.expenseDist}
                         </CardTitle>
                         <CardDescription>
-                            Kategorilere göre gider oranları
+                            {t.dashboard.expenseDistDesc}
                         </CardDescription>
                     </CardHeader>
                     <CardContent>
@@ -313,51 +332,78 @@ export default function AdminDashboard() {
                 <CardHeader>
                     <CardTitle className="flex items-center gap-2">
                         <Clock className="h-5 w-5" />
-                        Son İşlemler
+                        {t.dashboard.recentTrans}
                     </CardTitle>
                     <CardDescription>
-                        Webhook&apos;tan alınan son finansal hareketler
+                        {t.dashboard.recentTransDesc}
                     </CardDescription>
                 </CardHeader>
                 <CardContent>
                     {transactions.length === 0 ? (
                         <div className="text-center py-8 text-muted-foreground">
-                            Henüz işlem bulunmuyor.
+                            {t.dashboard.noTransactions}
                         </div>
                     ) : (
-                        <Table>
-                            <TableHeader>
-                                <TableRow>
-                                    <TableHead>Tarih</TableHead>
-                                    <TableHead>Açıklama</TableHead>
-                                    <TableHead>Kategori</TableHead>
-                                    <TableHead>Tür</TableHead>
-                                    <TableHead className="text-right">Tutar</TableHead>
-                                </TableRow>
-                            </TableHeader>
-                            <TableBody>
+                        <>
+                            {/* Mobile Card View */}
+                            <div className="grid gap-4 md:hidden">
                                 {transactions.slice(0, 10).map((transaction) => (
-                                    <TableRow key={transaction.id}>
-                                        <TableCell className="font-medium">
-                                            {transaction.date ? new Date(transaction.date).toLocaleDateString("tr-TR") : '-'}
-                                        </TableCell>
-                                        <TableCell>{transaction.description}</TableCell>
-                                        <TableCell>
-                                            <Badge variant="outline">{transaction.category}</Badge>
-                                        </TableCell>
-                                        <TableCell>
-                                            <Badge variant={transaction.type === "INCOME" ? "success" : "destructive"}>
-                                                {transaction.type === "INCOME" ? "Gelir" : "Gider"}
-                                            </Badge>
-                                        </TableCell>
-                                        <TableCell className={`text-right font-medium ${transaction.type === "INCOME" ? "text-green-500" : "text-red-500"
-                                            }`}>
-                                            {transaction.type === "INCOME" ? "+" : "-"}₺{transaction.amount.toLocaleString("tr-TR")}
-                                        </TableCell>
-                                    </TableRow>
+                                    <TransactionCard
+                                        key={transaction.id}
+                                        transaction={transaction}
+                                        dateLabel={t.common.date}
+                                        categoryLabel={t.common.category}
+                                    />
                                 ))}
-                            </TableBody>
-                        </Table>
+                            </div>
+
+                            {/* Desktop Table View */}
+                            <div className="hidden md:block">
+                                <Table>
+                                    <TableHeader>
+                                        <TableRow>
+                                            <TableHead>{t.common.date}</TableHead>
+                                            <TableHead>{t.common.description}</TableHead>
+                                            <TableHead>{t.common.category}</TableHead>
+                                            <TableHead>{t.common.currency}</TableHead>
+                                            <TableHead>{t.common.type}</TableHead>
+                                            <TableHead className="text-right">{t.common.amount}</TableHead>
+                                        </TableRow>
+                                    </TableHeader>
+                                    <TableBody>
+                                        {transactions.slice(0, 10).map((transaction) => (
+                                            <TableRow key={transaction.id}>
+                                                <TableCell className="font-medium">
+                                                    {transaction.transaction_date
+                                                        ? new Date(transaction.transaction_date).toLocaleDateString(language === 'tr' ? 'tr-TR' : 'en-US')
+                                                        : '-'}
+                                                </TableCell>
+                                                <TableCell className="max-w-[200px] truncate">
+                                                    {transaction.description}
+                                                </TableCell>
+                                                <TableCell>
+                                                    <Badge variant="outline">{transaction.category}</Badge>
+                                                </TableCell>
+                                                <TableCell>
+                                                    <Badge variant="secondary">{transaction.currency}</Badge>
+                                                </TableCell>
+                                                <TableCell>
+                                                    <Badge variant={transaction.type === "INCOME" ? "success" : "destructive"}>
+                                                        {transaction.type === "INCOME" ? t.common.income : t.common.expense}
+                                                    </Badge>
+                                                </TableCell>
+                                                <TableCell className={`text-right font-medium ${transaction.type === "INCOME" ? "text-green-500" : "text-red-500"
+                                                    }`}>
+                                                    {transaction.type === "INCOME" ? "+" : "-"}
+                                                    {getCurrencySymbol(transaction.currency)}
+                                                    {transaction.amount.toLocaleString('tr-TR')}
+                                                </TableCell>
+                                            </TableRow>
+                                        ))}
+                                    </TableBody>
+                                </Table>
+                            </div>
+                        </>
                     )}
                 </CardContent>
             </Card>

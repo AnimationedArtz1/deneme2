@@ -1,4 +1,4 @@
-import type { Transaction } from '../actions/n8n'
+import type { Transaction, Currency } from '@/lib/actions/n8n'
 
 /**
  * Calculate weekly stats from transactions (client-side utility)
@@ -15,9 +15,11 @@ export function calculateWeeklyStats(transactions: Transaction[]): { name: strin
         weekData[i] = { gelir: 0, gider: 0 }
     }
 
-    // Aggregate transactions
+    // Aggregate transactions (only TRY for chart simplicity)
     for (const t of transactions) {
-        const date = new Date(t.date || t.created_at)
+        if (t.currency !== 'TRY') continue
+
+        const date = new Date(t.transaction_date || t.created_at)
         if (date >= weekAgo) {
             const dayOfWeek = date.getDay()
             if (t.type === 'INCOME') {
@@ -43,7 +45,8 @@ export function calculateExpenseDistribution(transactions: Transaction[]): { nam
     const colors = ['#f97316', '#3b82f6', '#10b981', '#8b5cf6', '#ec4899']
 
     for (const t of transactions) {
-        if (t.type === 'EXPENSE') {
+        // Only count TRY expenses for pie chart
+        if (t.type === 'EXPENSE' && t.currency === 'TRY') {
             const cat = t.category || 'Diğer'
             categoryTotals[cat] = (categoryTotals[cat] || 0) + t.amount
         }
@@ -57,4 +60,24 @@ export function calculateExpenseDistribution(transactions: Transaction[]): { nam
             value,
             color: colors[i % colors.length],
         }))
+}
+
+/**
+ * Get currency symbol
+ */
+export function getCurrencySymbol(currency: Currency): string {
+    const symbols: Record<Currency, string> = {
+        TRY: '₺',
+        USD: '$',
+        EUR: '€',
+    }
+    return symbols[currency] || '₺'
+}
+
+/**
+ * Format amount with currency
+ */
+export function formatCurrency(amount: number, currency: Currency): string {
+    const symbol = getCurrencySymbol(currency)
+    return `${symbol}${amount.toLocaleString('tr-TR', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`
 }

@@ -13,25 +13,38 @@ export interface N8NResponse {
     error?: string
 }
 
+export type Currency = 'TRY' | 'USD' | 'EUR'
+
 export interface Transaction {
     id: string
     amount: number
     type: 'INCOME' | 'EXPENSE'
     category: string
+    sub_category?: string
     description: string
-    date: string
+    currency: Currency
+    exchange_rate?: number
+    transaction_date: string
     created_at: string
+    file_url?: string
 }
 
-export interface DashboardStats {
+export interface CurrencyStats {
     income: number
     expense: number
     balance: number
 }
 
+export interface DashboardStats {
+    TRY: CurrencyStats
+    USD: CurrencyStats
+    EUR: CurrencyStats
+}
+
 export interface DashboardData {
     transactions: Transaction[]
     stats: DashboardStats
+    subCategories: string[]
 }
 
 /**
@@ -39,6 +52,12 @@ export interface DashboardData {
  * This replaces direct PostgreSQL access with webhook-based data fetching
  */
 export async function fetchDashboardData(): Promise<DashboardData> {
+    const emptyStats: DashboardStats = {
+        TRY: { income: 0, expense: 0, balance: 0 },
+        USD: { income: 0, expense: 0, balance: 0 },
+        EUR: { income: 0, expense: 0, balance: 0 },
+    }
+
     try {
         // Use POST method as n8n webhooks typically require POST
         const response = await fetch(N8N_DASHBOARD_DATA_WEBHOOK, {
@@ -52,7 +71,7 @@ export async function fetchDashboardData(): Promise<DashboardData> {
 
         if (!response.ok) {
             console.error('Dashboard data fetch failed:', response.status)
-            return { transactions: [], stats: { income: 0, expense: 0, balance: 0 } }
+            return { transactions: [], stats: emptyStats, subCategories: [] }
         }
 
         const rawData = await response.json()
@@ -64,8 +83,13 @@ export async function fetchDashboardData(): Promise<DashboardData> {
             amount: string
             type: string
             category: string
+            sub_category?: string
             description: string
+            currency?: string
+            exchange_rate?: string
+            transaction_date?: string
             created_at: string
+            file_url?: string
         }> = []
 
         // Format 1: [{ data: [{ transactions: [...] }] }]
@@ -89,6 +113,9 @@ export async function fetchDashboardData(): Promise<DashboardData> {
             rawTransactions = rawData[0].transactions
         }
 
+        // Collect unique sub-categories
+        const subCategoriesSet = new Set<string>()
+
         // Transform and filter transactions
         const transactions: Transaction[] = rawTransactions
             .filter((t) =>
@@ -96,42 +123,71 @@ export async function fetchDashboardData(): Promise<DashboardData> {
                 !t.description.includes('[object Object]') &&
                 parseFloat(t.amount || '0') > 0
             )
-            .map((t) => ({
-                id: String(t.id),
-                amount: parseFloat(t.amount) || 0,
-                type: t.type as 'INCOME' | 'EXPENSE',
-                category: t.category || 'Diğer',
-                description: t.description || '',
-                date: t.created_at ? new Date(t.created_at).toISOString().split('T')[0] : '',
-                created_at: t.created_at || '',
-            }))
-            .sort((a, b) => new Date(b.created_at).getTime() - new Date(a.created_at).getTime())
+            .map((t) => {
+                // Add sub_category to set
+                if (t.sub_category) {
+                    subCategoriesSet.add(t.sub_category)
+                }
 
-        // Calculate stats from transactions
-        let income = 0
-        let expense = 0
+                // Determine currency (default to TRY)
+                let currency: Currency = 'TRY'
+                if (t.currency === 'USD' || t.currency === 'EUR') {
+                    currency = t.currency
+                }
+
+                return {
+                    id: String(t.id),
+                    amount: parseFloat(t.amount) || 0,
+                    type: t.type as 'INCOME' | 'EXPENSE',
+                    category: t.category || 'Diğer',
+                    sub_category: t.sub_category,
+                    description: t.description || '',
+                    currency,
+                    exchange_rate: t.exchange_rate ? parseFloat(t.exchange_rate) : undefined,
+                    transaction_date: t.transaction_date || t.created_at?.split('T')[0] || '',
+                    created_at: t.created_at || '',
+                    file_url: t.file_url,
+                }
+            })
+            // Sort by transaction_date (newest first)
+            .sort((a, b) => {
+                const dateA = new Date(a.transaction_date || a.created_at || 0).getTime()
+                const dateB = new Date(b.transaction_date || b.created_at || 0).getTime()
+                return dateB - dateA
+            })
+
+        // Calculate stats per currency
+        const stats: DashboardStats = {
+            TRY: { income: 0, expense: 0, balance: 0 },
+            USD: { income: 0, expense: 0, balance: 0 },
+            EUR: { income: 0, expense: 0, balance: 0 },
+        }
 
         for (const t of transactions) {
+            const curr = t.currency || 'TRY'
             if (t.type === 'INCOME') {
-                income += t.amount
+                stats[curr].income += t.amount
             } else {
-                expense += t.amount
+                stats[curr].expense += t.amount
             }
         }
 
-        console.log(`Processed ${transactions.length} transactions, income: ${income}, expense: ${expense}`)
+        // Calculate balances
+        stats.TRY.balance = stats.TRY.income - stats.TRY.expense
+        stats.USD.balance = stats.USD.income - stats.USD.expense
+        stats.EUR.balance = stats.EUR.income - stats.EUR.expense
+
+        console.log(`Processed ${transactions.length} transactions`)
+        console.log(`Stats: TRY=${stats.TRY.balance}, USD=${stats.USD.balance}, EUR=${stats.EUR.balance}`)
 
         return {
             transactions,
-            stats: {
-                income,
-                expense,
-                balance: income - expense,
-            }
+            stats,
+            subCategories: Array.from(subCategoriesSet).sort(),
         }
     } catch (error) {
         console.error('Dashboard data fetch error:', error)
-        return { transactions: [], stats: { income: 0, expense: 0, balance: 0 } }
+        return { transactions: [], stats: emptyStats, subCategories: [] }
     }
 }
 
@@ -139,17 +195,27 @@ export async function fetchDashboardData(): Promise<DashboardData> {
  * Send natural language transaction to n8n AI agent for parsing and saving
  * Example: "Ahmet'e 500 TL mazot parası verdim"
  */
-export async function addTransaction(text: string): Promise<N8NResponse> {
+export async function addTransaction(text: string, fileBase64?: string, fileName?: string): Promise<N8NResponse> {
     try {
+        const body: Record<string, unknown> = {
+            text,
+            timestamp: new Date().toISOString()
+        }
+
+        // Add file data if provided
+        if (fileBase64 && fileName) {
+            body.file = {
+                data: fileBase64,
+                name: fileName,
+            }
+        }
+
         const response = await fetch(N8N_TRANSACTION_WEBHOOK, {
             method: 'POST',
             headers: {
                 'Content-Type': 'application/json',
             },
-            body: JSON.stringify({
-                text,
-                timestamp: new Date().toISOString()
-            }),
+            body: JSON.stringify(body),
         })
 
         if (!response.ok) {
@@ -187,16 +253,26 @@ export async function addTransaction(text: string): Promise<N8NResponse> {
  * AI Query for the Analyst Chat interface (General Assistant)
  * Sends user message to n8n chatbot for AI-powered analysis
  */
-export async function aiQuery(userMessage: string): Promise<N8NResponse> {
+export async function aiQuery(userMessage: string, fileBase64?: string, fileName?: string): Promise<N8NResponse> {
     try {
+        const body: Record<string, unknown> = {
+            chatInput: userMessage
+        }
+
+        // Add file data if provided
+        if (fileBase64 && fileName) {
+            body.file = {
+                data: fileBase64,
+                name: fileName,
+            }
+        }
+
         const response = await fetch(N8N_CHATBOT_WEBHOOK, {
             method: 'POST',
             headers: {
                 'Content-Type': 'application/json',
             },
-            body: JSON.stringify({
-                chatInput: userMessage
-            }),
+            body: JSON.stringify(body),
         })
 
         if (!response.ok) {

@@ -21,47 +21,46 @@ import {
     SelectTrigger,
     SelectValue,
 } from "@/components/ui/select"
+import { TransactionCard } from "@/components/transaction-card"
 import { useAuthStore } from "@/lib/store/auth-store"
-import { fetchDashboardData, type Transaction } from "@/lib/actions/n8n"
+import { useTranslation } from "@/lib/store/language-store"
+import { fetchDashboardData, type Transaction, type Currency } from "@/lib/actions/n8n"
+import { getCurrencySymbol } from "@/lib/utils/dashboard"
 
 // Refresh interval: 5 minutes
 const REFRESH_INTERVAL = 5 * 60 * 1000
 
 // CSV Export function with UTF-8 BOM for Excel compatibility
-function exportToCSV(transactions: Transaction[]) {
-    // UTF-8 BOM for Excel to recognize Turkish characters
+function exportToCSV(transactions: Transaction[], language: string) {
     const BOM = '\uFEFF'
 
-    // CSV Header
-    const headers = ['Tarih', 'Kategori', 'Açıklama', 'Tutar', 'Tip']
+    const headers = language === 'tr'
+        ? ['Tarih', 'Kategori', 'Alt Kategori', 'Açıklama', 'Para Birimi', 'Tutar', 'Tip']
+        : ['Date', 'Category', 'Sub Category', 'Description', 'Currency', 'Amount', 'Type']
 
-    // CSV Rows
     const rows = transactions.map(t => [
-        t.date ? new Date(t.date).toLocaleDateString('tr-TR') : '-',
+        t.transaction_date ? new Date(t.transaction_date).toLocaleDateString(language === 'tr' ? 'tr-TR' : 'en-US') : '-',
         t.category,
-        // Escape quotes in description
+        t.sub_category || '-',
         `"${(t.description || '').replace(/"/g, '""')}"`,
-        `${t.type === 'INCOME' ? '+' : '-'}${t.amount.toLocaleString('tr-TR')} TL`,
-        t.type === 'INCOME' ? 'Gelir' : 'Gider'
+        t.currency,
+        `${t.type === 'INCOME' ? '+' : '-'}${t.amount.toLocaleString('tr-TR')}`,
+        t.type === 'INCOME' ? (language === 'tr' ? 'Gelir' : 'Income') : (language === 'tr' ? 'Gider' : 'Expense')
     ])
 
-    // Combine headers and rows
     const csvContent = BOM + [
         headers.join(';'),
         ...rows.map(row => row.join(';'))
     ].join('\n')
 
-    // Create blob and download
     const blob = new Blob([csvContent], { type: 'text/csv;charset=utf-8;' })
     const url = URL.createObjectURL(blob)
     const link = document.createElement('a')
 
-    // Filename with date
     const today = new Date().toISOString().split('T')[0]
     link.href = url
-    link.download = `islemler-${today}.csv`
+    link.download = `${language === 'tr' ? 'islemler' : 'transactions'}-${today}.csv`
 
-    // Trigger download
     document.body.appendChild(link)
     link.click()
     document.body.removeChild(link)
@@ -71,12 +70,16 @@ function exportToCSV(transactions: Transaction[]) {
 export default function TransactionsPage() {
     const user = useAuthStore((state) => state.user)
     const isAdmin = user?.role === "admin"
+    const { t, language } = useTranslation()
 
     const [transactions, setTransactions] = useState<Transaction[]>([])
+    const [subCategories, setSubCategories] = useState<string[]>([])
     const [isLoading, setIsLoading] = useState(true)
     const [isRefreshing, setIsRefreshing] = useState(false)
     const [searchTerm, setSearchTerm] = useState("")
     const [filterType, setFilterType] = useState<"all" | "INCOME" | "EXPENSE">("all")
+    const [filterCurrency, setFilterCurrency] = useState<"all" | Currency>("all")
+    const [filterSubCategory, setFilterSubCategory] = useState<string>("all")
 
     // Load data from webhook
     const loadData = useCallback(async (showIndicator = false) => {
@@ -84,6 +87,7 @@ export default function TransactionsPage() {
             if (showIndicator) setIsRefreshing(true)
             const data = await fetchDashboardData()
             setTransactions(data.transactions)
+            setSubCategories(data.subCategories)
         } catch (error) {
             console.error('Data load error:', error)
         } finally {
@@ -109,19 +113,21 @@ export default function TransactionsPage() {
     const filteredTransactions = transactions
         .filter((t) => {
             const matchesSearch = t.description.toLowerCase().includes(searchTerm.toLowerCase()) ||
-                t.category.toLowerCase().includes(searchTerm.toLowerCase())
+                t.category.toLowerCase().includes(searchTerm.toLowerCase()) ||
+                (t.sub_category?.toLowerCase().includes(searchTerm.toLowerCase()) ?? false)
             const matchesType = filterType === "all" || t.type === filterType
-            return matchesSearch && matchesType
+            const matchesCurrency = filterCurrency === "all" || t.currency === filterCurrency
+            const matchesSubCategory = filterSubCategory === "all" || t.sub_category === filterSubCategory
+            return matchesSearch && matchesType && matchesCurrency && matchesSubCategory
         })
         .sort((a, b) => {
-            // Sort by created_at descending (newest first)
-            const dateA = new Date(a.created_at || a.date || 0).getTime()
-            const dateB = new Date(b.created_at || b.date || 0).getTime()
+            const dateA = new Date(a.transaction_date || a.created_at || 0).getTime()
+            const dateB = new Date(b.transaction_date || b.created_at || 0).getTime()
             return dateB - dateA
         })
 
     const handleExport = () => {
-        exportToCSV(filteredTransactions)
+        exportToCSV(filteredTransactions, language)
     }
 
     const handleRefresh = () => {
@@ -133,7 +139,7 @@ export default function TransactionsPage() {
             <div className="flex items-center justify-center h-64">
                 <div className="flex flex-col items-center gap-4">
                     <Loader2 className="h-8 w-8 animate-spin text-primary" />
-                    <p className="text-muted-foreground">Veriler yükleniyor...</p>
+                    <p className="text-muted-foreground">{t.common.loading}</p>
                 </div>
             </div>
         )
@@ -143,96 +149,164 @@ export default function TransactionsPage() {
         <div className="space-y-6">
             <Card>
                 <CardHeader>
-                    <div className="flex items-center justify-between">
+                    <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4">
                         <div>
-                            <CardTitle>Tüm İşlemler</CardTitle>
+                            <CardTitle>{t.transactions.title}</CardTitle>
                             <CardDescription>
-                                {isAdmin ? "Webhook'tan alınan tüm finansal hareketler" : "İşlemlerinizi görüntüleyin"}
+                                {isAdmin ? t.transactions.adminDesc : t.transactions.userDesc}
                             </CardDescription>
                         </div>
-                        <div className="flex items-center gap-2">
-                            {/* Refresh Button */}
-                            <Button variant="outline" size="sm" onClick={handleRefresh} disabled={isRefreshing}>
+                        <div className="flex flex-wrap items-center gap-2">
+                            <Button
+                                variant="outline"
+                                size="sm"
+                                onClick={handleRefresh}
+                                disabled={isRefreshing}
+                                className="min-h-[44px] sm:min-h-0"
+                            >
                                 <RefreshCw className={`h-4 w-4 mr-2 ${isRefreshing ? 'animate-spin' : ''}`} />
-                                Yenile
+                                {t.common.refresh}
                             </Button>
-                            {/* Excel Export Button */}
-                            <Button variant="outline" onClick={handleExport}>
+                            <Button
+                                variant="outline"
+                                onClick={handleExport}
+                                className="min-h-[44px] sm:min-h-0"
+                            >
                                 <Download className="mr-2 h-4 w-4" />
-                                Excel&apos;e Aktar
+                                {t.common.export}
                             </Button>
                         </div>
                     </div>
                 </CardHeader>
                 <CardContent>
                     {/* Filters */}
-                    <div className="flex flex-col sm:flex-row gap-4 mb-6">
-                        <div className="relative flex-1">
+                    <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4 mb-6">
+                        {/* Search */}
+                        <div className="relative sm:col-span-2 lg:col-span-1">
                             <Search className="absolute left-3 top-1/2 transform -translate-y-1/2 h-4 w-4 text-muted-foreground" />
                             <Input
-                                placeholder="Ara..."
+                                placeholder={t.common.search}
                                 value={searchTerm}
                                 onChange={(e) => setSearchTerm(e.target.value)}
-                                className="pl-9"
+                                className="pl-9 min-h-[44px]"
                             />
                         </div>
+
+                        {/* Type Filter */}
                         <Select value={filterType} onValueChange={(value: "all" | "INCOME" | "EXPENSE") => setFilterType(value)}>
-                            <SelectTrigger className="w-[180px]">
+                            <SelectTrigger className="min-h-[44px]">
                                 <Filter className="mr-2 h-4 w-4" />
                                 <SelectValue />
                             </SelectTrigger>
                             <SelectContent>
-                                <SelectItem value="all">Tümü</SelectItem>
-                                <SelectItem value="INCOME">Gelirler</SelectItem>
-                                <SelectItem value="EXPENSE">Giderler</SelectItem>
+                                <SelectItem value="all">{t.common.all}</SelectItem>
+                                <SelectItem value="INCOME">{t.transactions.incomes}</SelectItem>
+                                <SelectItem value="EXPENSE">{t.transactions.expenses}</SelectItem>
+                            </SelectContent>
+                        </Select>
+
+                        {/* Currency Filter */}
+                        <Select value={filterCurrency} onValueChange={(value: "all" | Currency) => setFilterCurrency(value)}>
+                            <SelectTrigger className="min-h-[44px]">
+                                <SelectValue placeholder={t.common.currency} />
+                            </SelectTrigger>
+                            <SelectContent>
+                                <SelectItem value="all">{t.common.all}</SelectItem>
+                                <SelectItem value="TRY">🇹🇷 TRY</SelectItem>
+                                <SelectItem value="USD">🇺🇸 USD</SelectItem>
+                                <SelectItem value="EUR">🇪🇺 EUR</SelectItem>
+                            </SelectContent>
+                        </Select>
+
+                        {/* Sub-Category Filter */}
+                        <Select value={filterSubCategory} onValueChange={setFilterSubCategory}>
+                            <SelectTrigger className="min-h-[44px]">
+                                <SelectValue placeholder={t.common.subCategory} />
+                            </SelectTrigger>
+                            <SelectContent>
+                                <SelectItem value="all">{t.common.all}</SelectItem>
+                                {subCategories.map((subCat) => (
+                                    <SelectItem key={subCat} value={subCat}>
+                                        {subCat}
+                                    </SelectItem>
+                                ))}
                             </SelectContent>
                         </Select>
                     </div>
 
-                    {/* Table */}
-                    <div className="rounded-md border">
-                        <Table>
-                            <TableHeader>
-                                <TableRow>
-                                    <TableHead>Tarih</TableHead>
-                                    <TableHead>Açıklama</TableHead>
-                                    <TableHead>Kategori</TableHead>
-                                    <TableHead>Tür</TableHead>
-                                    <TableHead className="text-right">Tutar</TableHead>
-                                </TableRow>
-                            </TableHeader>
-                            <TableBody>
-                                {filteredTransactions.length === 0 ? (
-                                    <TableRow>
-                                        <TableCell colSpan={5} className="text-center py-8 text-muted-foreground">
-                                            İşlem bulunamadı.
-                                        </TableCell>
-                                    </TableRow>
-                                ) : (
-                                    filteredTransactions.map((transaction) => (
-                                        <TableRow key={transaction.id}>
-                                            <TableCell className="font-medium">
-                                                {transaction.date ? new Date(transaction.date).toLocaleDateString("tr-TR") : '-'}
-                                            </TableCell>
-                                            <TableCell>{transaction.description}</TableCell>
-                                            <TableCell>
-                                                <Badge variant="outline">{transaction.category}</Badge>
-                                            </TableCell>
-                                            <TableCell>
-                                                <Badge variant={transaction.type === "INCOME" ? "success" : "destructive"}>
-                                                    {transaction.type === "INCOME" ? "Gelir" : "Gider"}
-                                                </Badge>
-                                            </TableCell>
-                                            <TableCell className={`text-right font-medium ${transaction.type === "INCOME" ? "text-green-500" : "text-red-500"
-                                                }`}>
-                                                {transaction.type === "INCOME" ? "+" : "-"}₺{transaction.amount.toLocaleString("tr-TR")}
-                                            </TableCell>
+                    {/* Results */}
+                    {filteredTransactions.length === 0 ? (
+                        <div className="text-center py-8 text-muted-foreground">
+                            {t.transactions.noResults}
+                        </div>
+                    ) : (
+                        <>
+                            {/* Mobile Card View */}
+                            <div className="grid gap-4 md:hidden">
+                                {filteredTransactions.map((transaction) => (
+                                    <TransactionCard
+                                        key={transaction.id}
+                                        transaction={transaction}
+                                        dateLabel={t.common.date}
+                                        categoryLabel={t.common.category}
+                                    />
+                                ))}
+                            </div>
+
+                            {/* Desktop Table View */}
+                            <div className="hidden md:block rounded-md border">
+                                <Table>
+                                    <TableHeader>
+                                        <TableRow>
+                                            <TableHead>{t.common.date}</TableHead>
+                                            <TableHead>{t.common.description}</TableHead>
+                                            <TableHead>{t.common.category}</TableHead>
+                                            <TableHead>{t.common.subCategory}</TableHead>
+                                            <TableHead>{t.common.currency}</TableHead>
+                                            <TableHead>{t.common.type}</TableHead>
+                                            <TableHead className="text-right">{t.common.amount}</TableHead>
                                         </TableRow>
-                                    ))
-                                )}
-                            </TableBody>
-                        </Table>
-                    </div>
+                                    </TableHeader>
+                                    <TableBody>
+                                        {filteredTransactions.map((transaction) => (
+                                            <TableRow key={transaction.id}>
+                                                <TableCell className="font-medium">
+                                                    {transaction.transaction_date
+                                                        ? new Date(transaction.transaction_date).toLocaleDateString(language === 'tr' ? 'tr-TR' : 'en-US')
+                                                        : '-'}
+                                                </TableCell>
+                                                <TableCell className="max-w-[200px] truncate">
+                                                    {transaction.description}
+                                                </TableCell>
+                                                <TableCell>
+                                                    <Badge variant="outline">{transaction.category}</Badge>
+                                                </TableCell>
+                                                <TableCell>
+                                                    {transaction.sub_category && (
+                                                        <Badge variant="secondary">{transaction.sub_category}</Badge>
+                                                    )}
+                                                </TableCell>
+                                                <TableCell>
+                                                    <Badge variant="outline">{transaction.currency}</Badge>
+                                                </TableCell>
+                                                <TableCell>
+                                                    <Badge variant={transaction.type === "INCOME" ? "success" : "destructive"}>
+                                                        {transaction.type === "INCOME" ? t.common.income : t.common.expense}
+                                                    </Badge>
+                                                </TableCell>
+                                                <TableCell className={`text-right font-medium ${transaction.type === "INCOME" ? "text-green-500" : "text-red-500"
+                                                    }`}>
+                                                    {transaction.type === "INCOME" ? "+" : "-"}
+                                                    {getCurrencySymbol(transaction.currency)}
+                                                    {transaction.amount.toLocaleString('tr-TR')}
+                                                </TableCell>
+                                            </TableRow>
+                                        ))}
+                                    </TableBody>
+                                </Table>
+                            </div>
+                        </>
+                    )}
                 </CardContent>
             </Card>
         </div>
