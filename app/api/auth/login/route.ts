@@ -7,8 +7,8 @@
 
 import { NextRequest, NextResponse } from 'next/server'
 
-// Only allow in development
-const isDevelopment = process.env.NODE_ENV !== 'production'
+// Allow in development OR when ENABLE_MOCK_AUTH is set
+const isMockAuthEnabled = process.env.NODE_ENV !== 'production' || process.env.ENABLE_MOCK_AUTH === 'true'
 
 // Mock users for development
 const MOCK_USERS = {
@@ -17,7 +17,7 @@ const MOCK_USERS = {
 }
 
 export async function POST(request: NextRequest) {
-    if (!isDevelopment) {
+    if (!isMockAuthEnabled) {
         return NextResponse.json(
             { ok: false, message: 'Auth endpoint not implemented' },
             { status: 501 }

@@ -4,7 +4,8 @@
 
 import { NextRequest, NextResponse } from 'next/server'
 
-const isDevelopment = process.env.NODE_ENV !== 'production'
+// Allow in development OR when ENABLE_MOCK_AUTH is set
+const isMockAuthEnabled = process.env.NODE_ENV !== 'production' || process.env.ENABLE_MOCK_AUTH === 'true'
 
 // Mock users for development
 const MOCK_USERS: Record<string, { id: string; role: 'admin' | 'worker'; displayName: string }> = {
@@ -17,7 +18,7 @@ const MOCK_USERS: Record<string, { id: string; role: 'admin' | 'worker'; display
 const sessions = new Map<string, { userId: string; username: string; role: 'admin' | 'worker'; displayName: string }>()
 
 export async function GET(request: NextRequest) {
-    if (!isDevelopment) {
+    if (!isMockAuthEnabled) {
         return NextResponse.json(
             { authenticated: false },
             { status: 200 }

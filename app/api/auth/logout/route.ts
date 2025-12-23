@@ -3,12 +3,12 @@
  */
 
 import { NextResponse } from 'next/server'
-import { cookies } from 'next/headers'
 
-const isDevelopment = process.env.NODE_ENV !== 'production'
+// Allow in development OR when ENABLE_MOCK_AUTH is set
+const isMockAuthEnabled = process.env.NODE_ENV !== 'production' || process.env.ENABLE_MOCK_AUTH === 'true'
 
 export async function POST() {
-    if (!isDevelopment) {
+    if (!isMockAuthEnabled) {
         return NextResponse.json(
             { ok: false, message: 'Auth endpoint not implemented' },
             { status: 501 }
