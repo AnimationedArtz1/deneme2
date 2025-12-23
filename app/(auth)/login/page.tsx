@@ -16,7 +16,7 @@ import { ThemeToggle } from "@/components/theme-toggle"
 
 export default function LoginPage() {
     const router = useRouter()
-    const login = useAuthStore((state) => state.login)
+    const { login, isLoading } = useAuthStore()
     const { t } = useTranslation()
 
     const [adminUsername, setAdminUsername] = useState("")
@@ -25,20 +25,19 @@ export default function LoginPage() {
     const [workerPassword, setWorkerPassword] = useState("")
     const [showPassword, setShowPassword] = useState(false)
     const [error, setError] = useState("")
-    const [isLoading, setIsLoading] = useState(false)
 
-    const handleLogin = async (username: string, password: string, expectedRole: 'admin' | 'worker') => {
+    const handleLogin = async (username: string, password: string) => {
         setError("")
-        setIsLoading(true)
 
-        // Simulate network delay
-        await new Promise(resolve => setTimeout(resolve, 500))
+        if (!username.trim() || !password.trim()) {
+            setError(t.login.loginFailed)
+            return
+        }
 
-        const result = login(username, password)
+        const result = await login(username, password)
 
         if (!result.success) {
             setError(result.error || t.login.loginFailed)
-            setIsLoading(false)
             return
         }
 
@@ -93,16 +92,17 @@ export default function LoginPage() {
                         <TabsContent value="admin">
                             <form onSubmit={(e) => {
                                 e.preventDefault()
-                                handleLogin(adminUsername, adminPassword, 'admin')
+                                handleLogin(adminUsername, adminPassword)
                             }} className="space-y-4">
                                 <div className="space-y-2">
                                     <Label htmlFor="admin-username">{t.login.username}</Label>
                                     <Input
                                         id="admin-username"
-                                        placeholder="admin"
+                                        placeholder={t.login.username}
                                         value={adminUsername}
                                         onChange={(e) => setAdminUsername(e.target.value)}
                                         disabled={isLoading}
+                                        className="min-h-[44px]"
                                     />
                                 </div>
                                 <div className="space-y-2">
@@ -115,6 +115,7 @@ export default function LoginPage() {
                                             value={adminPassword}
                                             onChange={(e) => setAdminPassword(e.target.value)}
                                             disabled={isLoading}
+                                            className="min-h-[44px]"
                                         />
                                         <Button
                                             type="button"
@@ -130,7 +131,7 @@ export default function LoginPage() {
                                 {error && (
                                     <p className="text-sm text-destructive text-center">{error}</p>
                                 )}
-                                <Button type="submit" className="w-full" disabled={isLoading}>
+                                <Button type="submit" className="w-full min-h-[48px]" disabled={isLoading}>
                                     {isLoading ? (
                                         <>
                                             <Loader2 className="mr-2 h-4 w-4 animate-spin" />
@@ -140,25 +141,23 @@ export default function LoginPage() {
                                         t.login.adminLogin
                                     )}
                                 </Button>
-                                <p className="text-xs text-muted-foreground text-center">
-                                    {t.login.demo}: admin / admin
-                                </p>
                             </form>
                         </TabsContent>
 
                         <TabsContent value="worker">
                             <form onSubmit={(e) => {
                                 e.preventDefault()
-                                handleLogin(workerUsername, workerPassword, 'worker')
+                                handleLogin(workerUsername, workerPassword)
                             }} className="space-y-4">
                                 <div className="space-y-2">
                                     <Label htmlFor="worker-username">{t.login.username}</Label>
                                     <Input
                                         id="worker-username"
-                                        placeholder="user"
+                                        placeholder={t.login.username}
                                         value={workerUsername}
                                         onChange={(e) => setWorkerUsername(e.target.value)}
                                         disabled={isLoading}
+                                        className="min-h-[44px]"
                                     />
                                 </div>
                                 <div className="space-y-2">
@@ -171,6 +170,7 @@ export default function LoginPage() {
                                             value={workerPassword}
                                             onChange={(e) => setWorkerPassword(e.target.value)}
                                             disabled={isLoading}
+                                            className="min-h-[44px]"
                                         />
                                         <Button
                                             type="button"
@@ -186,7 +186,7 @@ export default function LoginPage() {
                                 {error && (
                                     <p className="text-sm text-destructive text-center">{error}</p>
                                 )}
-                                <Button type="submit" className="w-full" disabled={isLoading}>
+                                <Button type="submit" className="w-full min-h-[48px]" disabled={isLoading}>
                                     {isLoading ? (
                                         <>
                                             <Loader2 className="mr-2 h-4 w-4 animate-spin" />
@@ -196,9 +196,6 @@ export default function LoginPage() {
                                         t.login.workerLogin
                                     )}
                                 </Button>
-                                <p className="text-xs text-muted-foreground text-center">
-                                    {t.login.demo}: user / user
-                                </p>
                             </form>
                         </TabsContent>
                     </Tabs>

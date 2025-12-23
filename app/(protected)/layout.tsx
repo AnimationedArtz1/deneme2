@@ -10,11 +10,10 @@ import {
     LogOut,
     Menu,
     ChevronLeft,
-    TrendingUp,
-    TrendingDown,
-    Wallet,
     RefreshCw,
     DollarSign,
+    Users,
+    Activity,
 } from "lucide-react"
 import { Button } from "@/components/ui/button"
 import { ScrollArea } from "@/components/ui/scroll-area"
@@ -59,6 +58,8 @@ export default function ProtectedLayout({
         { title: t.nav.overview, href: "/admin/dashboard", icon: LayoutDashboard },
         { title: t.nav.transactions, href: "/transactions", icon: Receipt },
         { title: t.nav.aiAnalyst, href: "/admin/query", icon: MessageSquareText },
+        { title: t.nav.users, href: "/admin/users", icon: Users },
+        { title: t.nav.activity, href: "/admin/activity", icon: Activity },
     ]
 
     const workerNavItems = [

@@ -1,25 +1,24 @@
 import { create } from 'zustand'
 import { persist } from 'zustand/middleware'
+import { loginUser, type LoginResponse } from '@/lib/api/auth'
 
 export type UserRole = 'admin' | 'worker' | null
 
 export interface User {
+    id?: string
     username: string
     role: UserRole
     displayName: string
+    isActive?: boolean
 }
 
 interface AuthState {
     user: User | null
     isAuthenticated: boolean
-    login: (username: string, password: string) => { success: boolean; error?: string }
+    isLoading: boolean
+    login: (username: string, password: string) => Promise<{ success: boolean; error?: string }>
     logout: () => void
-}
-
-// Mock credentials
-const MOCK_USERS: Record<string, { password: string; role: UserRole; displayName: string }> = {
-    admin: { password: 'admin', role: 'admin', displayName: 'Yönetici' },
-    user: { password: 'user', role: 'worker', displayName: 'Personel' },
+    setLoading: (loading: boolean) => void
 }
 
 export const useAuthStore = create<AuthState>()(
@@ -27,30 +26,62 @@ export const useAuthStore = create<AuthState>()(
         (set) => ({
             user: null,
             isAuthenticated: false,
-            login: (username: string, password: string) => {
-                const mockUser = MOCK_USERS[username.toLowerCase()]
+            isLoading: false,
 
-                if (!mockUser) {
-                    return { success: false, error: 'Kullanıcı bulunamadı' }
+            login: async (username: string, password: string) => {
+                set({ isLoading: true })
+
+                try {
+                    const response = await loginUser({ username, password })
+
+                    if (!response.success || !response.data) {
+                        set({ isLoading: false })
+                        return {
+                            success: false,
+                            error: response.error || 'Giriş başarısız'
+                        }
+                    }
+
+                    const userData = response.data.user
+
+                    // Check if user is active
+                    if (userData.isActive === false) {
+                        set({ isLoading: false })
+                        return {
+                            success: false,
+                            error: 'Hesabınız devre dışı bırakılmış. Yönetici ile iletişime geçin.'
+                        }
+                    }
+
+                    set({
+                        user: {
+                            id: userData.id,
+                            username: userData.username,
+                            role: userData.role,
+                            displayName: userData.displayName,
+                            isActive: userData.isActive,
+                        },
+                        isAuthenticated: true,
+                        isLoading: false,
+                    })
+
+                    return { success: true }
+                } catch (error) {
+                    console.error('Login error:', error)
+                    set({ isLoading: false })
+                    return {
+                        success: false,
+                        error: 'Bağlantı hatası. Lütfen tekrar deneyin.'
+                    }
                 }
-
-                if (mockUser.password !== password) {
-                    return { success: false, error: 'Şifre hatalı' }
-                }
-
-                set({
-                    user: {
-                        username: username.toLowerCase(),
-                        role: mockUser.role,
-                        displayName: mockUser.displayName,
-                    },
-                    isAuthenticated: true,
-                })
-
-                return { success: true }
             },
+
             logout: () => {
-                set({ user: null, isAuthenticated: false })
+                set({ user: null, isAuthenticated: false, isLoading: false })
+            },
+
+            setLoading: (loading: boolean) => {
+                set({ isLoading: loading })
             },
         }),
         {
