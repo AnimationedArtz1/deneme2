@@ -10,11 +10,10 @@ import {
     LogOut,
     Menu,
     ChevronLeft,
-    TrendingUp,
-    TrendingDown,
-    Wallet,
     RefreshCw,
     DollarSign,
+    Users,
+    Activity,
 } from "lucide-react"
 import { Button } from "@/components/ui/button"
 import { ScrollArea } from "@/components/ui/scroll-area"
@@ -27,6 +26,7 @@ import { useAuthStore } from "@/lib/store/auth-store"
 import { useTranslation } from "@/lib/store/language-store"
 import { cn } from "@/lib/utils"
 import { fetchDashboardData, type DashboardStats, type Transaction } from "@/lib/actions/n8n"
+import { logout as apiLogout, getCurrentUser } from "@/lib/api/auth"
 
 // Refresh interval: 5 minutes
 const REFRESH_INTERVAL = 5 * 60 * 1000
@@ -38,7 +38,7 @@ export default function ProtectedLayout({
 }) {
     const router = useRouter()
     const pathname = usePathname()
-    const { user, isAuthenticated, logout } = useAuthStore()
+    const { user, isAuthenticated, setUser, clearUser, setHydrated, isHydrated } = useAuthStore()
     const { t, language } = useTranslation()
     const [sidebarOpen, setSidebarOpen] = useState(true)
     const [mounted, setMounted] = useState(false)
@@ -59,6 +59,8 @@ export default function ProtectedLayout({
         { title: t.nav.overview, href: "/admin/dashboard", icon: LayoutDashboard },
         { title: t.nav.transactions, href: "/transactions", icon: Receipt },
         { title: t.nav.aiAnalyst, href: "/admin/query", icon: MessageSquareText },
+        { title: t.nav.users || "Kullanıcılar", href: "/admin/users", icon: Users },
+        { title: t.nav.activity || "Aktivite", href: "/admin/activity", icon: Activity },
     ]
 
     const workerNavItems = [
@@ -81,18 +83,33 @@ export default function ProtectedLayout({
         }
     }, [])
 
+    // Check auth on mount via API
     useEffect(() => {
-        setMounted(true)
-    }, [])
-
-    useEffect(() => {
-        if (mounted && !isAuthenticated) {
-            router.push('/login')
+        const checkAuth = async () => {
+            try {
+                const response = await getCurrentUser()
+                if (response.authenticated && response.user) {
+                    setUser(response.user)
+                } else {
+                    // Not authenticated, redirect to login
+                    clearUser()
+                    router.push('/login')
+                }
+            } catch {
+                // API not available, redirect to login
+                clearUser()
+                router.push('/login')
+            } finally {
+                setMounted(true)
+                setHydrated(true)
+            }
         }
-    }, [mounted, isAuthenticated, router])
 
+        checkAuth()
+    }, [router, setUser, clearUser, setHydrated])
+
+    // Role-based route protection
     useEffect(() => {
-        // Role-based route protection
         if (mounted && user) {
             if (user.role === 'worker' && pathname.startsWith('/admin')) {
                 router.push('/worker/dashboard')
@@ -126,8 +143,13 @@ export default function ProtectedLayout({
 
     const navItems = user?.role === 'admin' ? adminNavItems : workerNavItems
 
-    const handleLogout = () => {
-        logout()
+    const handleLogout = async () => {
+        try {
+            await apiLogout()
+        } catch {
+            // Even if API fails, clear local state
+        }
+        clearUser()
         router.push('/login')
     }
 

@@ -23,6 +23,7 @@ import { Logo } from "@/components/best-holiday-ui/logo"
 import { useAuthStore } from "@/lib/store/auth-store"
 import { cn } from "@/lib/utils"
 import type { DashboardStats, Transaction } from "@/lib/actions/db"
+import { logout as apiLogout } from "@/lib/api/auth"
 
 const adminNavItems = [
     {
@@ -68,7 +69,7 @@ export function ProtectedLayoutClient({
 }: ProtectedLayoutClientProps) {
     const router = useRouter()
     const pathname = usePathname()
-    const { user, isAuthenticated, logout } = useAuthStore()
+    const { user, isAuthenticated, clearUser } = useAuthStore()
     const [sidebarOpen, setSidebarOpen] = useState(true)
     const [mounted, setMounted] = useState(false)
 
@@ -104,8 +105,13 @@ export function ProtectedLayoutClient({
 
     const navItems = user?.role === 'admin' ? adminNavItems : workerNavItems
 
-    const handleLogout = () => {
-        logout()
+    const handleLogout = async () => {
+        try {
+            await apiLogout()
+        } catch {
+            // Even if API fails, clear local state
+        }
+        clearUser()
         router.push('/login')
     }
 

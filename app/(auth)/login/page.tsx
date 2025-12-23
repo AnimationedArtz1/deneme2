@@ -13,10 +13,14 @@ import { useAuthStore } from "@/lib/store/auth-store"
 import { useTranslation } from "@/lib/store/language-store"
 import { LanguageToggle } from "@/components/language-toggle"
 import { ThemeToggle } from "@/components/theme-toggle"
+import { login as apiLogin, getCurrentUser } from "@/lib/api/auth"
+
+// Only show demo credentials in development
+const isDevelopment = process.env.NODE_ENV !== "production"
 
 export default function LoginPage() {
     const router = useRouter()
-    const login = useAuthStore((state) => state.login)
+    const setUser = useAuthStore((state) => state.setUser)
     const { t } = useTranslation()
 
     const [adminUsername, setAdminUsername] = useState("")
@@ -27,27 +31,47 @@ export default function LoginPage() {
     const [error, setError] = useState("")
     const [isLoading, setIsLoading] = useState(false)
 
-    const handleLogin = async (username: string, password: string, expectedRole: 'admin' | 'worker') => {
-        setError("")
-        setIsLoading(true)
-
-        // Simulate network delay
-        await new Promise(resolve => setTimeout(resolve, 500))
-
-        const result = login(username, password)
-
-        if (!result.success) {
-            setError(result.error || t.login.loginFailed)
-            setIsLoading(false)
+    const handleLogin = async (username: string, password: string) => {
+        if (!username.trim() || !password) {
+            setError(t.login.fillAllFields || "Lütfen tüm alanları doldurun")
             return
         }
 
-        // Redirect based on role
-        const user = useAuthStore.getState().user
-        if (user?.role === 'admin') {
-            router.push('/admin/dashboard')
-        } else {
-            router.push('/worker/dashboard')
+        setError("")
+        setIsLoading(true)
+
+        try {
+            // Call API to login
+            const result = await apiLogin(username, password)
+
+            if (!result.ok) {
+                // Generic error message for security
+                setError(t.login.loginFailed || "Kullanıcı adı veya şifre hatalı")
+                setIsLoading(false)
+                return
+            }
+
+            // Fetch current user to get role info
+            const userResponse = await getCurrentUser()
+
+            if (!userResponse.authenticated || !userResponse.user) {
+                setError(t.login.loginFailed || "Giriş başarısız")
+                setIsLoading(false)
+                return
+            }
+
+            // Update UI state
+            setUser(userResponse.user)
+
+            // Redirect based on role
+            if (userResponse.user.role === 'admin') {
+                router.push('/admin/dashboard')
+            } else {
+                router.push('/worker/dashboard')
+            }
+        } catch {
+            setError(t.login.connectionError || "Bağlantı hatası. Lütfen tekrar deneyin.")
+            setIsLoading(false)
         }
     }
 
@@ -93,16 +117,17 @@ export default function LoginPage() {
                         <TabsContent value="admin">
                             <form onSubmit={(e) => {
                                 e.preventDefault()
-                                handleLogin(adminUsername, adminPassword, 'admin')
+                                handleLogin(adminUsername, adminPassword)
                             }} className="space-y-4">
                                 <div className="space-y-2">
                                     <Label htmlFor="admin-username">{t.login.username}</Label>
                                     <Input
                                         id="admin-username"
-                                        placeholder="admin"
+                                        placeholder={isDevelopment ? "admin" : ""}
                                         value={adminUsername}
                                         onChange={(e) => setAdminUsername(e.target.value)}
                                         disabled={isLoading}
+                                        autoComplete="username"
                                     />
                                 </div>
                                 <div className="space-y-2">
@@ -115,6 +140,7 @@ export default function LoginPage() {
                                             value={adminPassword}
                                             onChange={(e) => setAdminPassword(e.target.value)}
                                             disabled={isLoading}
+                                            autoComplete="current-password"
                                         />
                                         <Button
                                             type="button"
@@ -140,25 +166,29 @@ export default function LoginPage() {
                                         t.login.adminLogin
                                     )}
                                 </Button>
-                                <p className="text-xs text-muted-foreground text-center">
-                                    {t.login.demo}: admin / admin
-                                </p>
+                                {/* Demo credentials only shown in development */}
+                                {isDevelopment && (
+                                    <p className="text-xs text-muted-foreground text-center">
+                                        {t.login.demo}: admin / admin
+                                    </p>
+                                )}
                             </form>
                         </TabsContent>
 
                         <TabsContent value="worker">
                             <form onSubmit={(e) => {
                                 e.preventDefault()
-                                handleLogin(workerUsername, workerPassword, 'worker')
+                                handleLogin(workerUsername, workerPassword)
                             }} className="space-y-4">
                                 <div className="space-y-2">
                                     <Label htmlFor="worker-username">{t.login.username}</Label>
                                     <Input
                                         id="worker-username"
-                                        placeholder="user"
+                                        placeholder={isDevelopment ? "user" : ""}
                                         value={workerUsername}
                                         onChange={(e) => setWorkerUsername(e.target.value)}
                                         disabled={isLoading}
+                                        autoComplete="username"
                                     />
                                 </div>
                                 <div className="space-y-2">
@@ -171,6 +201,7 @@ export default function LoginPage() {
                                             value={workerPassword}
                                             onChange={(e) => setWorkerPassword(e.target.value)}
                                             disabled={isLoading}
+                                            autoComplete="current-password"
                                         />
                                         <Button
                                             type="button"
@@ -196,9 +227,12 @@ export default function LoginPage() {
                                         t.login.workerLogin
                                     )}
                                 </Button>
-                                <p className="text-xs text-muted-foreground text-center">
-                                    {t.login.demo}: user / user
-                                </p>
+                                {/* Demo credentials only shown in development */}
+                                {isDevelopment && (
+                                    <p className="text-xs text-muted-foreground text-center">
+                                        {t.login.demo}: user / user
+                                    </p>
+                                )}
                             </form>
                         </TabsContent>
                     </Tabs>
