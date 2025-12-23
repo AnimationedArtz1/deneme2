@@ -41,6 +41,7 @@ export async function apiClient<T>(
         const response = await fetch(url, {
             ...fetchOptions,
             signal: controller.signal,
+            credentials: 'include', // Include cookies in requests
             headers: {
                 'Content-Type': 'application/json',
                 ...fetchOptions.headers,
