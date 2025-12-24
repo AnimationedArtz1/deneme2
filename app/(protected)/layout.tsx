@@ -20,6 +20,7 @@ import {
     Truck,
     Home,
     ChevronDown,
+    PlusCircle,
 } from "lucide-react"
 import { Button } from "@/components/ui/button"
 import { ScrollArea } from "@/components/ui/scroll-area"
@@ -87,7 +88,7 @@ export default function ProtectedLayout({
     const financeNavItems = [
         { title: language === 'tr' ? 'Panelim' : 'My Panel', href: "/user/panel", icon: Home },
         { title: language === 'tr' ? 'İşlemlerim' : 'My Transactions', href: "/user/transactions", icon: Receipt },
-        { title: language === 'tr' ? 'AI Asistan' : 'AI Assistant', href: "/user/ai", icon: MessageSquareText },
+        { title: language === 'tr' ? 'Hızlı İşlem' : 'Quick Transaction', href: "/user/ai", icon: PlusCircle },
     ]
 
     // Load sidebar data from webhook

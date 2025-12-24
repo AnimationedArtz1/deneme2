@@ -1,78 +1,49 @@
 "use client"
 
-import { useState, useRef, useEffect, useCallback } from "react"
-import { Send, Bot, User, Sparkles, Loader2, Paperclip, X, FileText, Image } from "lucide-react"
+import { useState, useRef } from "react"
+import { Send, Sparkles, Loader2, Paperclip, X, FileText, Image, CheckCircle2, AlertCircle } from "lucide-react"
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card"
 import { Button } from "@/components/ui/button"
 import { Textarea } from "@/components/ui/textarea"
-import { ScrollArea } from "@/components/ui/scroll-area"
-import { Avatar, AvatarFallback } from "@/components/ui/avatar"
 import { Badge } from "@/components/ui/badge"
-import { aiQueryWithFile, aiQuery } from "@/lib/actions/n8n"
+import { addTransaction, addTransactionWithFile } from "@/lib/actions/n8n"
 import { useAuthStore } from "@/lib/store/auth-store"
 import { useTranslation } from "@/lib/store/language-store"
-
 import { toast } from "sonner"
 
-interface Message {
-    id: string
-    role: "user" | "assistant"
-    content: string
-    timestamp: Date
-    fileName?: string
-}
-
 /**
- * User AI Assistant Page
- * /user/ai - Personal AI assistant for finance_user
+ * User Quick Transaction Page
+ * /user/ai - Quick transaction entry for finance_user
+ * 
+ * NOT a chat interface - just a simple form to add transactions
+ * Sends to /webhook/islem-ekle with userId
  */
-export default function UserAIPage() {
+export default function UserQuickTransactionPage() {
     const { t, language } = useTranslation()
     const user = useAuthStore((state) => state.user)
 
-    const welcomeMessage = language === 'tr'
-        ? `Merhaba ${user?.displayName || 'User'}! Ben senin kişisel finans asistanınım. İşlemlerinle ilgili sorular sorabilir, yeni işlem eklememi isteyebilirsin.`
-        : `Hello ${user?.displayName || 'User'}! I'm your personal finance assistant. You can ask me about your transactions or request to add new ones.`
-
-    const [messages, setMessages] = useState<Message[]>([
-        {
-            id: "1",
-            role: "assistant",
-            content: welcomeMessage,
-            timestamp: new Date(),
-        },
-    ])
     const [input, setInput] = useState("")
     const [isLoading, setIsLoading] = useState(false)
     const [selectedFile, setSelectedFile] = useState<File | null>(null)
     const [filePreview, setFilePreview] = useState<string | null>(null)
+    const [lastResult, setLastResult] = useState<{ success: boolean; message: string } | null>(null)
 
-    const messagesEndRef = useRef<HTMLDivElement>(null)
-    const scrollAreaRef = useRef<HTMLDivElement>(null)
     const fileInputRef = useRef<HTMLInputElement>(null)
 
-    // User-focused suggested questions
-    const suggestedQuestions = language === 'tr' ? [
-        "Bugün 500 TL harcama yaptım",
-        "Son işlemlerimi göster",
-        "Bu ay ne kadar harcadım?",
-        "Gelir-gider özetimi çıkar",
+    // Example transactions for quick input
+    const exampleTransactions = language === 'tr' ? [
+        "500 TL mazot gideri",
+        "Otel için 2000 TL ödedim",
+        "Müşteriden 1500 TL tahsilat",
+        "350 EUR komisyon geldi",
+        "Personel maaşı 8500 TL",
     ] : [
-        "I spent 500 TL today",
-        "Show my recent transactions",
-        "How much did I spend this month?",
-        "Give me my income-expense summary",
+        "500 TL fuel expense",
+        "Paid 2000 TL for hotel",
+        "1500 TL collection from customer",
+        "350 EUR commission received",
+        "Staff salary 8500 TL",
     ]
-
-    const scrollToBottom = useCallback(() => {
-        if (messagesEndRef.current) {
-            messagesEndRef.current.scrollIntoView({ behavior: "smooth" })
-        }
-    }, [])
-
-    useEffect(() => {
-        scrollToBottom()
-    }, [messages, isLoading, scrollToBottom])
 
     const handleFileSelect = (e: React.ChangeEvent<HTMLInputElement>) => {
         const file = e.target.files?.[0]
@@ -98,67 +69,6 @@ export default function UserAIPage() {
         }
     }
 
-    const handleSubmit = async (e: React.FormEvent) => {
-        e.preventDefault()
-        if (!input.trim() && !selectedFile) return
-
-        const userMessage: Message = {
-            id: Date.now().toString(),
-            role: "user",
-            content: input || (selectedFile ? `[Dosya: ${selectedFile.name}]` : ''),
-            timestamp: new Date(),
-            fileName: selectedFile?.name,
-        }
-
-        setMessages((prev) => [...prev, userMessage])
-        setInput("")
-        setIsLoading(true)
-
-        try {
-            let response
-
-            if (selectedFile) {
-                const formData = new FormData()
-                formData.append('chatInput', input || `Dosya analizi: ${selectedFile.name}`)
-                formData.append('file', selectedFile)
-                if (user?.id) formData.append('userId', user.id)
-                response = await aiQueryWithFile(formData)
-            } else {
-                response = await aiQuery(input, user?.id)
-            }
-
-            removeFile()
-
-            const assistantMessage: Message = {
-                id: (Date.now() + 1).toString(),
-                role: "assistant",
-                content: response.success
-                    ? (response.data as { output?: string })?.output || JSON.stringify(response.data)
-                    : response.error || (language === 'tr' ? "Bir hata oluştu." : "An error occurred."),
-                timestamp: new Date(),
-            }
-
-            setMessages((prev) => [...prev, assistantMessage])
-        } catch {
-            const errorMessage: Message = {
-                id: (Date.now() + 1).toString(),
-                role: "assistant",
-                content: language === 'tr'
-                    ? "Üzgünüm, bir hata oluştu. Lütfen tekrar dene."
-                    : "Sorry, an error occurred. Please try again.",
-                timestamp: new Date(),
-            }
-            setMessages((prev) => [...prev, errorMessage])
-            toast.error(t.toast.connectionError)
-        } finally {
-            setIsLoading(false)
-        }
-    }
-
-    const handleSuggestionClick = (question: string) => {
-        setInput(question)
-    }
-
     const getFileIcon = (fileName: string) => {
         const ext = fileName.split('.').pop()?.toLowerCase()
         if (['jpg', 'jpeg', 'png', 'gif', 'webp'].includes(ext || '')) {
@@ -167,140 +77,165 @@ export default function UserAIPage() {
         return <FileText className="h-4 w-4" />
     }
 
+    const handleSubmit = async (e: React.FormEvent) => {
+        e.preventDefault()
+        if (!input.trim()) {
+            toast.error(language === 'tr' ? 'İşlem açıklaması girin' : 'Enter transaction description')
+            return
+        }
+
+        setIsLoading(true)
+        setLastResult(null)
+
+        try {
+            let response
+
+            if (selectedFile) {
+                // Send with file using FormData
+                const formData = new FormData()
+                formData.append('text', input)
+                formData.append('file', selectedFile)
+                if (user?.id) formData.append('userId', user.id)
+                response = await addTransactionWithFile(formData)
+            } else {
+                // Send text only with userId
+                response = await addTransaction(input, user?.id)
+            }
+
+            if (response.success) {
+                setLastResult({
+                    success: true,
+                    message: language === 'tr'
+                        ? 'İşlem başarıyla eklendi!'
+                        : 'Transaction added successfully!'
+                })
+                toast.success(language === 'tr' ? 'İşlem eklendi' : 'Transaction added')
+                setInput("")
+                removeFile()
+            } else {
+                setLastResult({
+                    success: false,
+                    message: response.error || (language === 'tr' ? 'Bir hata oluştu' : 'An error occurred')
+                })
+                toast.error(response.error || t.toast.error)
+            }
+        } catch (error) {
+            console.error('Transaction error:', error)
+            setLastResult({
+                success: false,
+                message: language === 'tr' ? 'Bağlantı hatası' : 'Connection error'
+            })
+            toast.error(t.toast.connectionError)
+        } finally {
+            setIsLoading(false)
+        }
+    }
+
+    const handleExampleClick = (example: string) => {
+        setInput(example)
+    }
+
     return (
-        <div className="flex flex-col h-[calc(100vh-14rem)]">
-            {/* User context hint */}
-            <div className="mb-4 p-3 bg-primary/5 rounded-lg border border-primary/20">
+        <div className="max-w-2xl mx-auto space-y-6">
+            {/* Header */}
+            <div className="space-y-2">
+                <h1 className="text-2xl font-semibold tracking-tight">
+                    {language === 'tr' ? 'Hızlı İşlem Ekle' : 'Quick Transaction Entry'}
+                </h1>
+                <p className="text-muted-foreground">
+                    {language === 'tr'
+                        ? 'İşlemi doğal dilde yazın, sistem otomatik olarak işleyecek.'
+                        : 'Write the transaction in natural language, the system will process it automatically.'}
+                </p>
+            </div>
+
+            {/* User Info */}
+            <div className="p-3 bg-primary/5 rounded-lg border border-primary/20">
                 <div className="flex items-center gap-2 text-sm">
                     <Sparkles className="h-4 w-4 text-primary" />
-                    <span className="font-medium">
+                    <span>
                         {language === 'tr'
-                            ? 'Kişisel finans asistanın. İşlem ekleyebilir, sorular sorabilirsin.'
-                            : 'Your personal finance assistant. Add transactions or ask questions.'}
+                            ? `Merhaba ${user?.displayName || 'Kullanıcı'}! İşlemleriniz otomatik olarak sizin adınıza kaydedilecek.`
+                            : `Hello ${user?.displayName || 'User'}! Your transactions will be automatically saved under your name.`}
                     </span>
                 </div>
             </div>
 
-            <Card className="flex flex-col flex-1 overflow-hidden">
-                <CardHeader className="border-b py-3">
-                    <CardTitle className="flex items-center gap-2 text-lg">
+            {/* Transaction Form */}
+            <Card>
+                <CardHeader>
+                    <CardTitle className="flex items-center gap-2">
                         <Sparkles className="h-5 w-5 text-primary" />
-                        {language === 'tr' ? 'AI Asistan' : 'AI Assistant'}
+                        {language === 'tr' ? 'İşlem Girişi' : 'Transaction Entry'}
                     </CardTitle>
-                    <CardDescription className="text-xs">
+                    <CardDescription>
                         {language === 'tr'
-                            ? 'Kişisel finans işlemleriniz için yardımcınız'
-                            : 'Your helper for personal finance transactions'}
+                            ? 'Örnek: "500 TL mazot gideri" veya "Müşteriden 2000 TL tahsilat"'
+                            : 'Example: "500 TL fuel expense" or "2000 TL collection from customer"'}
                     </CardDescription>
                 </CardHeader>
-
-                <CardContent className="flex-1 flex flex-col p-0 overflow-hidden">
-                    <ScrollArea className="flex-1 p-4" ref={scrollAreaRef}>
-                        <div className="space-y-4">
-                            {messages.map((message) => (
-                                <div
-                                    key={message.id}
-                                    className={`flex gap-3 ${message.role === "user" ? "justify-end" : "justify-start"}`}
+                <CardContent className="space-y-4">
+                    {/* Example Transactions */}
+                    <div className="space-y-2">
+                        <p className="text-sm text-muted-foreground">
+                            {language === 'tr' ? 'Örnek işlemler:' : 'Example transactions:'}
+                        </p>
+                        <div className="flex flex-wrap gap-2">
+                            {exampleTransactions.map((example, i) => (
+                                <Button
+                                    key={i}
+                                    variant="outline"
+                                    size="sm"
+                                    onClick={() => handleExampleClick(example)}
+                                    className="text-xs"
                                 >
-                                    {message.role === "assistant" && (
-                                        <Avatar className="h-8 w-8 shrink-0">
-                                            <AvatarFallback className="bg-primary/10 text-primary">
-                                                <Bot className="h-4 w-4" />
-                                            </AvatarFallback>
-                                        </Avatar>
-                                    )}
-                                    <div className={`max-w-[85%] sm:max-w-[75%] rounded-lg p-3 ${message.role === "user"
-                                        ? "bg-primary text-primary-foreground"
-                                        : "bg-muted"
-                                        }`}>
-                                        {message.fileName && (
-                                            <Badge variant="secondary" className="mb-2 text-xs">
-                                                {getFileIcon(message.fileName)}
-                                                <span className="ml-1">{message.fileName}</span>
-                                            </Badge>
-                                        )}
-                                        <p className="text-sm whitespace-pre-wrap">{message.content}</p>
-                                        <span className="text-xs opacity-70 mt-1 block">
-                                            {message.timestamp.toLocaleTimeString(language === 'tr' ? 'tr-TR' : 'en-US', {
-                                                hour: "2-digit",
-                                                minute: "2-digit",
-                                            })}
-                                        </span>
-                                    </div>
-                                    {message.role === "user" && (
-                                        <Avatar className="h-8 w-8 shrink-0">
-                                            <AvatarFallback className="bg-secondary">
-                                                <User className="h-4 w-4" />
-                                            </AvatarFallback>
-                                        </Avatar>
-                                    )}
-                                </div>
-                            ))}
-
-                            {isLoading && (
-                                <div className="flex gap-3 justify-start">
-                                    <Avatar className="h-8 w-8">
-                                        <AvatarFallback className="bg-primary/10 text-primary">
-                                            <Bot className="h-4 w-4" />
-                                        </AvatarFallback>
-                                    </Avatar>
-                                    <div className="bg-muted rounded-lg p-3">
-                                        <Loader2 className="h-4 w-4 animate-spin" />
-                                    </div>
-                                </div>
-                            )}
-                            <div ref={messagesEndRef} />
-                        </div>
-                    </ScrollArea>
-
-                    {/* Suggestions */}
-                    {messages.length === 1 && (
-                        <div className="p-4 border-t">
-                            <p className="text-sm text-muted-foreground mb-2">
-                                {language === 'tr' ? 'Örnek komutlar:' : 'Example commands:'}
-                            </p>
-                            <div className="flex flex-wrap gap-2">
-                                {suggestedQuestions.map((question, i) => (
-                                    <Button
-                                        key={i}
-                                        variant="outline"
-                                        size="sm"
-                                        onClick={() => handleSuggestionClick(question)}
-                                        className="text-xs"
-                                    >
-                                        {question}
-                                    </Button>
-                                ))}
-                            </div>
-                        </div>
-                    )}
-
-                    {/* File Preview */}
-                    {selectedFile && (
-                        <div className="px-4 py-2 border-t bg-muted/50">
-                            <div className="flex items-center gap-2">
-                                {filePreview ? (
-                                    <img src={filePreview} alt="Preview" className="h-12 w-12 object-cover rounded" />
-                                ) : (
-                                    <div className="h-12 w-12 bg-muted rounded flex items-center justify-center">
-                                        {getFileIcon(selectedFile.name)}
-                                    </div>
-                                )}
-                                <div className="flex-1 min-w-0">
-                                    <p className="text-sm font-medium truncate">{selectedFile.name}</p>
-                                    <p className="text-xs text-muted-foreground">
-                                        {(selectedFile.size / 1024).toFixed(1)} KB
-                                    </p>
-                                </div>
-                                <Button variant="ghost" size="icon" onClick={removeFile} className="shrink-0">
-                                    <X className="h-4 w-4" />
+                                    {example}
                                 </Button>
-                            </div>
+                            ))}
                         </div>
-                    )}
+                    </div>
 
-                    {/* Input Area */}
-                    <form onSubmit={handleSubmit} className="p-4 border-t">
+                    {/* Input Form */}
+                    <form onSubmit={handleSubmit} className="space-y-4">
+                        <div className="space-y-2">
+                            <Textarea
+                                value={input}
+                                onChange={(e) => setInput(e.target.value)}
+                                placeholder={
+                                    language === 'tr'
+                                        ? 'İşlemi yazın... (örn: "500 TL mazot gideri")'
+                                        : 'Enter transaction... (e.g. "500 TL fuel expense")'
+                                }
+                                className="min-h-[100px] text-base resize-none"
+                                disabled={isLoading}
+                            />
+                        </div>
+
+                        {/* File Preview */}
+                        {selectedFile && (
+                            <div className="p-3 bg-muted/50 rounded-lg border">
+                                <div className="flex items-center gap-3">
+                                    {filePreview ? (
+                                        <img src={filePreview} alt="Preview" className="h-12 w-12 object-cover rounded" />
+                                    ) : (
+                                        <div className="h-12 w-12 bg-muted rounded flex items-center justify-center">
+                                            {getFileIcon(selectedFile.name)}
+                                        </div>
+                                    )}
+                                    <div className="flex-1 min-w-0">
+                                        <p className="text-sm font-medium truncate">{selectedFile.name}</p>
+                                        <p className="text-xs text-muted-foreground">
+                                            {(selectedFile.size / 1024).toFixed(1)} KB
+                                        </p>
+                                    </div>
+                                    <Button variant="ghost" size="icon" onClick={removeFile} type="button">
+                                        <X className="h-4 w-4" />
+                                    </Button>
+                                </div>
+                            </div>
+                        )}
+
+                        {/* Buttons */}
                         <div className="flex gap-2">
                             <input
                                 ref={fileInputRef}
@@ -312,39 +247,81 @@ export default function UserAIPage() {
                             <Button
                                 type="button"
                                 variant="outline"
-                                size="icon"
                                 onClick={() => fileInputRef.current?.click()}
                                 disabled={isLoading}
-                                title={language === 'tr' ? 'Dosya Ekle' : 'Attach File'}
                             >
-                                <Paperclip className="h-4 w-4" />
+                                <Paperclip className="h-4 w-4 mr-2" />
+                                {language === 'tr' ? 'Dosya Ekle' : 'Attach File'}
                             </Button>
-                            <Textarea
-                                value={input}
-                                onChange={(e) => setInput(e.target.value)}
-                                placeholder={language === 'tr' ? 'Mesajını yaz...' : 'Type your message...'}
-                                className="min-h-[44px] max-h-32 resize-none text-base"
-                                onKeyDown={(e) => {
-                                    if (e.key === "Enter" && !e.shiftKey) {
-                                        e.preventDefault()
-                                        handleSubmit(e)
-                                    }
-                                }}
-                                disabled={isLoading}
-                            />
                             <Button
                                 type="submit"
-                                size="icon"
-                                disabled={isLoading || (!input.trim() && !selectedFile)}
+                                className="flex-1"
+                                disabled={isLoading || !input.trim()}
                             >
                                 {isLoading ? (
-                                    <Loader2 className="h-4 w-4 animate-spin" />
+                                    <>
+                                        <Loader2 className="h-4 w-4 mr-2 animate-spin" />
+                                        {language === 'tr' ? 'Gönderiliyor...' : 'Sending...'}
+                                    </>
                                 ) : (
-                                    <Send className="h-4 w-4" />
+                                    <>
+                                        <Send className="h-4 w-4 mr-2" />
+                                        {language === 'tr' ? 'İşlem Ekle' : 'Add Transaction'}
+                                    </>
                                 )}
                             </Button>
                         </div>
                     </form>
+
+                    {/* Result Message */}
+                    {lastResult && (
+                        <div className={`p-4 rounded-lg border ${lastResult.success
+                            ? 'bg-green-50 dark:bg-green-900/20 border-green-200 dark:border-green-800'
+                            : 'bg-red-50 dark:bg-red-900/20 border-red-200 dark:border-red-800'
+                            }`}>
+                            <div className="flex items-center gap-2">
+                                {lastResult.success ? (
+                                    <CheckCircle2 className="h-5 w-5 text-green-600 dark:text-green-400" />
+                                ) : (
+                                    <AlertCircle className="h-5 w-5 text-red-600 dark:text-red-400" />
+                                )}
+                                <p className={`text-sm font-medium ${lastResult.success
+                                    ? 'text-green-700 dark:text-green-300'
+                                    : 'text-red-700 dark:text-red-300'
+                                    }`}>
+                                    {lastResult.message}
+                                </p>
+                            </div>
+                        </div>
+                    )}
+                </CardContent>
+            </Card>
+
+            {/* Info Card */}
+            <Card className="bg-muted/30">
+                <CardContent className="pt-6">
+                    <div className="space-y-3 text-sm text-muted-foreground">
+                        <p className="font-medium text-foreground">
+                            {language === 'tr' ? '💡 İpuçları:' : '💡 Tips:'}
+                        </p>
+                        <ul className="list-disc list-inside space-y-1">
+                            <li>
+                                {language === 'tr'
+                                    ? 'Tutarı ve para birimini belirtin (örn: 500 TL, 100 USD)'
+                                    : 'Specify amount and currency (e.g. 500 TL, 100 USD)'}
+                            </li>
+                            <li>
+                                {language === 'tr'
+                                    ? 'Gelir/gider türünü belirtin (örn: "geldi", "ödedim", "tahsilat")'
+                                    : 'Specify income/expense type (e.g. "received", "paid", "collection")'}
+                            </li>
+                            <li>
+                                {language === 'tr'
+                                    ? 'Fatura veya makbuz ekleyebilirsiniz'
+                                    : 'You can attach invoices or receipts'}
+                            </li>
+                        </ul>
+                    </div>
                 </CardContent>
             </Card>
         </div>

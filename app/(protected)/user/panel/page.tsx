@@ -1,7 +1,7 @@
 "use client"
 
 import { useState, useEffect, useCallback } from "react"
-import { RefreshCw, Receipt, MessageSquareText, Plus, ArrowUpRight, ArrowDownRight } from "lucide-react"
+import { RefreshCw, Receipt, PlusCircle, Plus, ArrowUpRight, ArrowDownRight } from "lucide-react"
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card"
 import { Button } from "@/components/ui/button"
 import { Badge } from "@/components/ui/badge"
@@ -147,8 +147,8 @@ export default function UserPanelPage() {
                         </Link>
                         <Link href="/user/ai">
                             <Button variant="outline" className="w-full justify-start h-12">
-                                <MessageSquareText className="h-4 w-4 mr-3" />
-                                {language === 'tr' ? 'AI Asistan' : 'AI Assistant'}
+                                <PlusCircle className="h-4 w-4 mr-3" />
+                                {language === 'tr' ? 'Hızlı İşlem Ekle' : 'Quick Transaction'}
                             </Button>
                         </Link>
                     </div>

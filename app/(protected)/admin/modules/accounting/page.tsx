@@ -154,6 +154,8 @@ export default function AccountingOverview() {
     const { user } = useAuthStore()
 
     const isAdmin = user?.role === 'admin'
+    const isFinanceAdmin = user?.role === 'finance_admin'
+    const canSeeAllBalances = isAdmin || isFinanceAdmin
 
     const [isLoading, setIsLoading] = useState(true)
     const [isRefreshing, setIsRefreshing] = useState(false)
@@ -302,6 +304,50 @@ export default function AccountingOverview() {
                         </div>
                     </CardContent>
                 </Card>
+
+                {/* USD Balance - Visible to Admin and Finance Admin */}
+                {canSeeAllBalances && (
+                    <Card className="relative overflow-hidden">
+                        <div className="absolute top-0 right-0 w-24 h-24 bg-green-500/10 rounded-full -mr-12 -mt-12" />
+                        <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
+                            <CardTitle className="text-sm font-medium text-muted-foreground">
+                                {t.accounting.netBalance} (USD)
+                            </CardTitle>
+                            <Wallet className="h-4 w-4 text-muted-foreground" />
+                        </CardHeader>
+                        <CardContent>
+                            <div className={`text-2xl font-bold ${stats.balances.USD.net >= 0 ? 'text-green-500' : 'text-red-500'}`}>
+                                ${stats.balances.USD.net.toLocaleString('en-US')}
+                            </div>
+                            <div className="flex gap-2 text-xs mt-1">
+                                <span className="text-green-500">+${stats.balances.USD.receivable.toLocaleString('en-US')}</span>
+                                <span className="text-red-500">-${stats.balances.USD.payable.toLocaleString('en-US')}</span>
+                            </div>
+                        </CardContent>
+                    </Card>
+                )}
+
+                {/* EUR Balance - Visible to Admin and Finance Admin */}
+                {canSeeAllBalances && (
+                    <Card className="relative overflow-hidden">
+                        <div className="absolute top-0 right-0 w-24 h-24 bg-blue-500/10 rounded-full -mr-12 -mt-12" />
+                        <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
+                            <CardTitle className="text-sm font-medium text-muted-foreground">
+                                {t.accounting.netBalance} (EUR)
+                            </CardTitle>
+                            <Wallet className="h-4 w-4 text-muted-foreground" />
+                        </CardHeader>
+                        <CardContent>
+                            <div className={`text-2xl font-bold ${stats.balances.EUR.net >= 0 ? 'text-green-500' : 'text-red-500'}`}>
+                                €{stats.balances.EUR.net.toLocaleString('de-DE')}
+                            </div>
+                            <div className="flex gap-2 text-xs mt-1">
+                                <span className="text-green-500">+€{stats.balances.EUR.receivable.toLocaleString('de-DE')}</span>
+                                <span className="text-red-500">-€{stats.balances.EUR.payable.toLocaleString('de-DE')}</span>
+                            </div>
+                        </CardContent>
+                    </Card>
+                )}
 
                 {/* Entities Count - Admin Only */}
                 {isAdmin && (
@@ -467,8 +513,8 @@ export default function AccountingOverview() {
                 </CardContent>
             </Card>
 
-            {/* Multi-Currency Summary - Admin Only */}
-            {isAdmin && (
+            {/* Multi-Currency Summary - Admin and Finance Admin */}
+            {canSeeAllBalances && (
                 <Card>
                     <CardHeader>
                         <CardTitle className="text-lg">Para Birimi Bazında Bakiye</CardTitle>
