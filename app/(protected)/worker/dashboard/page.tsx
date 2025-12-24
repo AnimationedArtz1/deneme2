@@ -82,7 +82,7 @@ export default function WorkerDashboard() {
         setAiLoading(true)
 
         try {
-            const response = await addTransaction(aiInput)
+            const response = await addTransaction(aiInput, user?.id)
 
             if (response.success) {
                 toast.success(t.toast.success, {

@@ -69,6 +69,8 @@ export default function ProtectedLayout({
     const [dataError, setDataError] = useState(false)
 
     const isAdmin = user?.role === 'admin'
+    const isFinanceAdmin = user?.role === 'finance_admin'
+    const canSeeQuickStats = isAdmin || isFinanceAdmin
 
     // Accounting module nav items
     const accountingItems = [
@@ -403,8 +405,8 @@ export default function ProtectedLayout({
                         )}
                     </nav>
 
-                    {/* Quick Stats for Admin - Multi-Currency */}
-                    {user?.role === 'admin' && sidebarOpen && (
+                    {/* Quick Stats for Admin and Finance Admin - Multi-Currency */}
+                    {canSeeQuickStats && sidebarOpen && (
                         <>
                             <Separator className="my-4 mx-3" />
                             <div className="px-3 space-y-2">
@@ -476,20 +478,27 @@ export default function ProtectedLayout({
                                         recentTransactions.map((tx) => (
                                             <div
                                                 key={tx.id}
-                                                className="flex items-center justify-between px-3 py-1.5 rounded text-xs"
+                                                className="flex flex-col px-3 py-1.5 rounded text-xs gap-0.5"
                                             >
-                                                <span className="truncate max-w-[100px]" title={tx.description}>
-                                                    {tx.category}
-                                                </span>
-                                                <span
-                                                    className={cn(
-                                                        "font-medium",
-                                                        tx.type === 'INCOME' ? "text-green-500" : "text-red-500"
-                                                    )}
-                                                >
-                                                    {tx.type === 'INCOME' ? '+' : '-'}
-                                                    {formatCurrency(tx.amount, tx.currency)}
-                                                </span>
+                                                <div className="flex items-center justify-between">
+                                                    <span className="truncate max-w-[100px]" title={tx.description}>
+                                                        {tx.category}
+                                                    </span>
+                                                    <span
+                                                        className={cn(
+                                                            "font-medium",
+                                                            tx.type === 'INCOME' ? "text-green-500" : "text-red-500"
+                                                        )}
+                                                    >
+                                                        {tx.type === 'INCOME' ? '+' : '-'}
+                                                        {formatCurrency(tx.amount, tx.currency)}
+                                                    </span>
+                                                </div>
+                                                {tx.created_by_name && (
+                                                    <span className="text-muted-foreground text-[10px] truncate">
+                                                        {tx.created_by_name}
+                                                    </span>
+                                                )}
                                             </div>
                                         ))
                                     )}
